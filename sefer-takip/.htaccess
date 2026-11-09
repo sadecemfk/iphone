@@ -1,0 +1,15 @@
+# Sefer Takip
+Options -Indexes
+DirectoryIndex index.php
+
+# lib, pages ve data klasörlerine doğrudan erişimi engelle
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteRule ^(lib|pages|data)(/|$) - [F,L]
+  RewriteRule ^config\.php$ - [F,L]
+</IfModule>
+
+<IfModule mod_php.c>
+  php_value upload_max_filesize 25M
+  php_value post_max_size 60M
+</IfModule>
