@@ -40,14 +40,14 @@ $sayfalar = [
     'kurulum', 'giris', 'cikis', 'panel',
     'seferler', 'sefer_form', 'sefer', 'excel',
     'depolar', 'depo_form', 'soforler', 'sofor_form', 'urunler', 'urun_form',
-    'yedek', 'silinenler', 'kullanicilar', 'koordinat',
+    'yedek', 'silinenler', 'kullanicilar', 'koordinat', 'fis', 'ayarlar',
 ];
 if (!in_array($p, $sayfalar, true)) {
     $p = 'panel';
 }
 
 // Sadece yöneticilerin açabileceği sayfalar
-if ($p === 'yedek' && aktif_kullanici() && !yonetici_mi()) {
+if (in_array($p, ['yedek', 'ayarlar'], true) && aktif_kullanici() && !yonetici_mi()) {
     yetkisiz();
 }
 

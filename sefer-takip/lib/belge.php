@@ -106,7 +106,14 @@ function dosya_secildi_mi()
 function belgeleri_isle($seferId)
 {
     $hatalar = [];
-    foreach (['belge_irsaliye' => 'irsaliye', 'belge_kantar' => 'kantar', 'belge_diger' => 'diger'] as $alan => $tur) {
+    $alanlar = [
+        'belge_irsaliye' => 'irsaliye',
+        'belge_kantar' => 'kantar',
+        'belge_bosaltim_irsaliye' => 'bosaltim_irsaliye',
+        'belge_bosaltim_kantar' => 'bosaltim_kantar',
+        'belge_diger' => 'diger',
+    ];
+    foreach ($alanlar as $alan => $tur) {
         foreach (dosya_listesi($alan) as $f) {
             $e = belge_kaydet($seferId, $f, $tur);
             if ($e) {

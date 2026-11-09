@@ -41,6 +41,15 @@ $ayar = [
     'giris_deneme_limiti' => 5,
     'giris_kilit_dakika' => 15,
 
+    // Aşağıdaki 5 ayar yönetici panelindeki "Ayarlar" sayfasından da değiştirilebilir (oradaki değer geçerlidir)
+    'firma_adi' => '',
+    'firma_bilgi' => '',
+    // Ücret hesabında esas ağırlık: 'yukleme' | 'bosaltim' | 'dusuk' (hangisi düşükse)
+    'varsayilan_mal_esas' => 'yukleme',
+    'varsayilan_nakliye_esas' => 'yukleme',
+    // Yükleme ile boşaltım kantarı arasındaki fark bu yüzdeyi aşarsa uyarı verilir
+    'fire_tolerans_yuzde' => 0.5,
+
     // Yeni sefer / ürün için varsayılan KDV oranları (muhasebecinizle teyit edin)
     'varsayilan_nakliye_kdv' => 20,
     'varsayilan_urun_kdv' => 20,

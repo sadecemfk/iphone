@@ -22,6 +22,7 @@
   }
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0; background: var(--zemin); color: var(--yazi);
@@ -232,3 +233,20 @@ details.gereksinim { margin-top: 16px; }
   .tablo.gereksinimler td[data-e]::before { content: none; }
   .tablo.gereksinimler td + td { color: var(--soluk); font-size: .88rem; }
 }
+
+/* --- İki taraflı sefer --- */
+.taraf { border-top: 4px solid var(--cizgi); }
+.yukleme-tarafi { border-top-color: #e0a400; }
+.bosaltim-tarafi { border-top-color: #1c8a4a; }
+.taraf .bilgiler { margin-top: 10px; }
+.bosaltim-kutu { margin-top: 12px; border: 1px dashed var(--cizgi); border-radius: 10px; padding: 10px 12px; }
+.bosaltim-kutu[open] { background: var(--zemin); }
+.bosaltim-kutu summary { cursor: pointer; }
+.fire-onizleme { min-height: 1.2em; margin: 4px 0 10px; font-size: .9rem; }
+.fire-kart .fire-satir { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.fire-kart .fire-satir small { display: block; color: var(--soluk); font-size: .78rem; }
+.fire-kart .fire-satir b { font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+.fire-kart.fire-asim, .fire-kart.fire-fazla { border-color: var(--kirmizi); }
+details.esas { margin: 6px 0 4px; }
+details.esas summary { cursor: pointer; padding: 6px 0; }
+@media (max-width: 520px) { .fire-kart .fire-satir { grid-template-columns: 1fr 1fr; } }

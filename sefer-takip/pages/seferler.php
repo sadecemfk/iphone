@@ -54,6 +54,12 @@ sayfa_bas('Seferler', 'seferler');
       <label>Boşaltım deposu<select name="bdepo"><?= secenekler($bdepolar, $g['bdepo'] ?? '', 'Tümü', 'depo_etiket') ?></select></label>
       <label>Şoför<select name="sofor"><?= secenekler($soforler, $g['sofor'] ?? '', 'Tümü') ?></select></label>
       <label>Durum<select name="durum"><option value="">Tümü</option><?php foreach (DURUMLAR as $k => $v): ?><option value="<?= $k ?>" <?= ($g['durum'] ?? '') === $k ? 'selected' : '' ?>><?= h($v) ?></option><?php endforeach; ?></select></label>
+      <label>Boşaltım / fire<select name="bosaltim">
+        <option value="">Tümü</option>
+        <option value="eksik" <?= ($g['bosaltim'] ?? '') === 'eksik' ? 'selected' : '' ?>>Boşaltım kantarı girilmemiş</option>
+        <option value="girildi" <?= ($g['bosaltim'] ?? '') === 'girildi' ? 'selected' : '' ?>>Boşaltım kantarı girilmiş</option>
+        <option value="asim" <?= ($g['bosaltim'] ?? '') === 'asim' ? 'selected' : '' ?>>Fire toleransı (%<?= h(sayi_fmt(fire_toleransi(), 2)) ?>) aşılan</option>
+      </select></label>
       <label>Nakliye ödemesi<select name="odendi"><option value="">Tümü</option><option value="1" <?= ($g['odendi'] ?? '') === '1' ? 'selected' : '' ?>>Ödendi</option><option value="0" <?= ($g['odendi'] ?? '') === '0' ? 'selected' : '' ?>>Ödenmedi</option></select></label>
       <label>Plaka<input name="plaka" class="buyuk-harf" value="<?= h($g['plaka'] ?? '') ?>" placeholder="45AAR75"></label>
       <label>Ara<input name="ara" value="<?= h($g['ara'] ?? '') ?>" placeholder="İrsaliye no, TC, isim…"></label>
@@ -67,7 +73,13 @@ sayfa_bas('Seferler', 'seferler');
 
 <div class="istatistik">
   <div><small>Sefer</small><b><?= $toplamAdet ?></b></div>
-  <div><small>Toplam (iptaller hariç)</small><b><?= kg_fmt($t['kg'] / 1000) ?></b><span>ton</span></div>
+  <div><small>Yüklenen (iptaller hariç)</small><b><?= kg_fmt($t['kg'] / 1000) ?></b><span>ton · boşaltılan <?= kg_fmt($t['bos_kg'] / 1000) ?> t</span></div>
+  <div><a href="index.php?<?= h(http_build_query(array_merge($filtreler, ['p' => 'seferler', 'bosaltim' => 'asim']))) ?>"><small>Fire (boşaltımı girilenlerde)</small>
+    <b class="kucuk <?= $t['fire_asim'] ? 'kirmizi' : '' ?>"><?= kg_fmt($t['fire_kg']) ?> kg</b>
+    <span><?= $t['fire_yuzde'] !== null ? '%' . h(sayi_fmt($t['fire_yuzde'], 2)) . ' · ' : '' ?><?= (int)$t['fire_asim'] ?> sefer tolerans üstü</span></a></div>
+  <?php if ($t['bos_eksik']): ?>
+  <div><a href="index.php?<?= h(http_build_query(array_merge($filtreler, ['p' => 'seferler', 'bosaltim' => 'eksik']))) ?>"><small>Boşaltım kantarı bekleyen</small><b class="kirmizi"><?= (int)$t['bos_eksik'] ?></b><span>sefer</span></a></div>
+  <?php endif; ?>
   <div><small>Mal bedeli KDV hariç</small><b class="kucuk"><?= tl($t['mal']) ?></b><span>dahil: <?= tl($t['mal_toplam']) ?></span></div>
   <div><small>Nakliye KDV hariç</small><b class="kucuk"><?= tl($t['nak']) ?></b><span>dahil: <?= tl($t['nak_toplam']) ?></span></div>
 </div>
@@ -77,10 +89,13 @@ sayfa_bas('Seferler', 'seferler');
   <h2>Ürün Bazında Özet</h2>
   <div class="tablo-kap">
   <table class="tablo">
-    <thead><tr><th>Ürün</th><th class="sag">Sefer</th><th class="sag">Ton</th><th class="sag">Mal Bedeli (KDV hariç)</th><th class="sag">Nakliye (KDV hariç)</th></tr></thead>
+    <thead><tr><th>Ürün</th><th class="sag">Sefer</th><th class="sag">Yükleme (t)</th><th class="sag">Boşaltım (t)</th><th class="sag">Fire</th><th class="sag">Mal Bedeli (KDV hariç)</th><th class="sag">Nakliye (KDV hariç)</th></tr></thead>
     <tbody>
     <?php foreach ($ozet as $o): ?>
-      <tr><td data-e="Ürün"><b><?= h($o[0]) ?></b></td><td data-e="Sefer" class="sag"><?= (int)$o[1] ?></td><td data-e="Ton" class="sag"><?= kg_fmt($o[3]) ?></td><td data-e="Mal Bedeli" class="sag"><?= tl($o[4]) ?></td><td data-e="Nakliye" class="sag"><?= tl($o[6]) ?></td></tr>
+      <tr><td data-e="Ürün"><b><?= h($o['urun']) ?></b></td><td data-e="Sefer" class="sag"><?= (int)$o['adet'] ?></td>
+        <td data-e="Yükleme (t)" class="sag"><?= kg_fmt($o['kg'] / 1000) ?></td><td data-e="Boşaltım (t)" class="sag"><?= kg_fmt($o['bos_kg'] / 1000) ?></td>
+        <td data-e="Fire" class="sag"><?= kg_fmt($o['fire_kg']) ?> kg<?= $o['fire_yuzde'] !== null ? ' (%' . h(sayi_fmt($o['fire_yuzde'], 2)) . ')' : '' ?></td>
+        <td data-e="Mal Bedeli" class="sag"><?= tl($o['mal']) ?></td><td data-e="Nakliye" class="sag"><?= tl($o['nak']) ?></td></tr>
     <?php endforeach; ?>
     </tbody>
   </table>
@@ -91,7 +106,7 @@ sayfa_bas('Seferler', 'seferler');
 <div class="kart tablo-kap">
 <table class="tablo seferler">
   <thead><tr>
-    <th>No</th><th>Tarih</th><th>Durum</th><th>Yükleme → Boşaltım</th><th>Şoför / Araç</th><th>Ürün</th><th class="sag">kg</th><th class="sag">Mal Bedeli</th><th class="sag">Nakliye</th><th>Belge</th>
+    <th>No</th><th>Tarih</th><th>Durum</th><th>Yükleme → Boşaltım</th><th>Şoför / Araç</th><th>Ürün</th><th class="sag">kg (yükleme → boşaltım)</th><th class="sag">Mal Bedeli</th><th class="sag">Nakliye</th><th>Belge</th>
   </tr></thead>
   <tbody>
   <?php foreach ($liste as $s): $hs = hesap($s); ?>
@@ -102,7 +117,7 @@ sayfa_bas('Seferler', 'seferler');
       <td data-e="Güzergah"><?= h($s['ydepo_ad']) ?> → <?= h($s['bdepo_ad']) ?><?= $s['bdepo_il'] ? ' <span class="soluk">(' . h($s['bdepo_il']) . ')</span>' : '' ?></td>
       <td data-e="Şoför"><span><?= h(sofor_adsoyad($s)) ?> <span class="soluk"><?= h($s['cekici_plaka']) ?><?= $s['dorse_plaka'] ? ' / ' . h($s['dorse_plaka']) : '' ?></span></span></td>
       <td data-e="Ürün"><?= h($s['urun_ad']) ?></td>
-      <td data-e="kg" class="sag"><?= kg_fmt($s['miktar_kg']) ?></td>
+      <td data-e="kg" class="sag"><span><?= kg_fmt($s['miktar_kg']) ?><?php if ($hs['bos_kg'] !== null): ?> → <?= kg_fmt($hs['bos_kg']) ?><br><?= fire_rozet($hs) ?><?php elseif (in_array($s['durum'], ['yuklendi', 'teslim'], true)): ?><br><span class="soluk kucuk-yazi">boşaltım bekleniyor</span><?php endif; ?></span></td>
       <td data-e="Mal Bedeli" class="sag"><?= tl($hs['mal']) ?></td>
       <td data-e="Nakliye" class="sag"><?= tl($hs['nak']) ?> <?= $s['nakliye_odendi'] ? '✅' : '⏳' ?></td>
       <td data-e="Belge"><?= $s['belge_sayisi'] ? '📄 ' . (int)$s['belge_sayisi'] : '<span class="kirmizi">yok</span>' ?></td>

@@ -1,12 +1,10 @@
 <?php
 $bugun = date('Y-m-d');
-$ay = one("SELECT COUNT(*) adet, COALESCE(SUM(miktar_kg),0) kg,
-    COALESCE(SUM(miktar_kg/1000.0*urun_ton_fiyat*(1+urun_kdv/100.0)),0) mal,
-    COALESCE(SUM(miktar_kg/1000.0*nakliye_ton_fiyat*(1+nakliye_kdv/100.0)),0) nak
-    FROM seferler WHERE silindi = 0 AND durum != 'iptal' AND tarih >= ? AND tarih <= ?", [date('Y-m-01'), date('Y-m-t')]);
 $bugunAdet = (int)one('SELECT COUNT(*) c FROM seferler WHERE silindi = 0 AND tarih = ?', [$bugun])['c'];
+$ayToplam = sefer_toplamlar(' WHERE s.silindi = 0 AND s.tarih >= ? AND s.tarih <= ?', [date('Y-m-01'), date('Y-m-t')]);
+$bosEksik = (int)one("SELECT COUNT(*) c FROM seferler WHERE silindi = 0 AND bosaltim_kg IS NULL AND durum IN ('yuklendi', 'teslim')")['c'];
 $yolda = (int)one("SELECT COUNT(*) c FROM seferler WHERE silindi = 0 AND durum = 'yuklendi'")['c'];
-$odenmemis = one("SELECT COUNT(*) c, COALESCE(SUM(miktar_kg/1000.0*nakliye_ton_fiyat*(1+nakliye_kdv/100.0)),0) t FROM seferler WHERE silindi = 0 AND durum != 'iptal' AND nakliye_odendi = 0");
+$odenmemis = one("SELECT COUNT(*) c, COALESCE(SUM(" . sql_esas_kg('nakliye_esas') . " / 1000.0 * s.nakliye_ton_fiyat * (1 + s.nakliye_kdv / 100.0)), 0) t FROM seferler s WHERE s.silindi = 0 AND s.durum != 'iptal' AND s.nakliye_odendi = 0");
 $son = all(sefer_sql() . ' WHERE s.silindi = 0 ORDER BY s.tarih DESC, s.id DESC LIMIT 10');
 $eksik = [
     'depo' => (int)one('SELECT COUNT(*) c FROM depolar WHERE silindi = 0')['c'],
@@ -69,9 +67,11 @@ sayfa_bas('Panel', 'panel');
 <div class="istatistik">
   <div><small>Bugün</small><b><?= $bugunAdet ?></b><span>sefer</span></div>
   <div><small>Yolda</small><b><?= $yolda ?></b><span>araç</span></div>
-  <div><small>Bu ay</small><b><?= (int)$ay['adet'] ?></b><span><?= kg_fmt($ay['kg'] / 1000) ?> ton</span></div>
-  <div><small>Bu ay mal bedeli (KDV dahil)</small><b class="kucuk"><?= tl($ay['mal']) ?></b></div>
-  <div><small>Bu ay nakliye (KDV dahil)</small><b class="kucuk"><?= tl($ay['nak']) ?></b></div>
+  <div><small>Bu ay</small><b><?= (int)$ayToplam['adet'] ?></b><span><?= kg_fmt($ayToplam['kg'] / 1000) ?> ton yüklendi</span></div>
+  <div><small>Bu ay mal bedeli (KDV dahil)</small><b class="kucuk"><?= tl($ayToplam['mal_toplam']) ?></b></div>
+  <div><small>Bu ay nakliye (KDV dahil)</small><b class="kucuk"><?= tl($ayToplam['nak_toplam']) ?></b></div>
+  <div><a href="index.php?p=seferler&bas=<?= date('Y-m-01') ?>&bit=<?= date('Y-m-t') ?>&bosaltim=asim"><small>Bu ay fire</small><b class="kucuk <?= $ayToplam['fire_asim'] ? 'kirmizi' : '' ?>"><?= kg_fmt($ayToplam['fire_kg']) ?> kg</b><span><?= $ayToplam['fire_yuzde'] !== null ? '%' . h(sayi_fmt($ayToplam['fire_yuzde'], 2)) . ' · ' : '' ?><?= (int)$ayToplam['fire_asim'] ?> sefer tolerans üstü</span></a></div>
+  <?php if ($bosEksik): ?><div><a href="index.php?p=seferler&bosaltim=eksik"><small>Boşaltım kantarı bekleyen</small><b class="kirmizi"><?= $bosEksik ?></b><span>sefer</span></a></div><?php endif; ?>
   <div><a href="index.php?p=seferler&odendi=0"><small>Ödenmemiş nakliye</small><b class="kucuk"><?= tl($odenmemis['t']) ?></b><span><?= (int)$odenmemis['c'] ?> sefer</span></a></div>
 </div>
 

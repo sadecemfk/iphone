@@ -19,7 +19,19 @@ iPhone'dan kullanılacak şekilde tasarlandı. **PHP + SQLite** ile çalışır,
   - Mal bedeli ve nakliye ücreti KDV hariç/dahil olarak otomatik hesaplanır.
   - Hatalı sayılar ("27 ton", "abc", eksi değer) **kaydedilmez**, uyarı verilir.
   - Aynı irsaliye/fiş no başka seferde varsa uyarı verilir.
-- **Belgeler:** İrsaliye ve kantar fişi PDF'i ya da fotoğrafı sefere eklenir.
+- **İki taraflı sefer:** Her seferin **yükleme tarafı** ve **boşaltım tarafı** ayrı tutulur. Her tarafta kantar net kg, irsaliye no, kantar fiş no ve kendi belgeleri vardır:
+  - Yükleme irsaliyesi ve yükleme kantar fişi
+  - Boşaltım irsaliyesi ve boşaltım kantar fişi
+
+  Araç boşaltınca sefer sayfasındaki **"Boşaltımı Kaydet"** kutusundan boşaltım bilgileri ve belgeleri girilir, sefer "Teslim Edildi" olur.
+- **Fire takibi:** Yükleme ile boşaltım kantarı arasındaki fark (kg ve %) otomatik hesaplanır. Fark **fire toleransını** aşarsa (varsayılan %0,5) uyarı verilir. Listede "boşaltım kantarı bekleyen" ve "toleransı aşan" seferler süzülebilir.
+- **Ücret hesap esası:** Mal bedeli ve nakliye ücreti her sefer için ayrı ayrı şu esaslardan birine göre hesaplanabilir:
+  - **yükleme kantarı**
+  - **boşaltım kantarı**
+  - **hangisi düşükse**
+
+  Varsayılanlar yönetici **Ayarlar** sayfasından seçilir. Boşaltım girilene kadar tutar geçici olarak yükleme kantarına göre gösterilir.
+- **Sefer Fişi:** İki tarafı, fireyi, ücretleri ve imza alanlarını gösteren yazdırılabilir fiş. iPhone'da Yazdır → PDF olarak kaydedip paylaşılabilir. **Fiyatsız fiş** (şoför / fabrika için) ücretleri göstermez.
 - **WhatsApp:** `wa.me/905444067494?text=...` formatında konumlar ve belge linkleri gönderilir. iPhone'da PDF dosyasının kendisi de paylaşılabilir.
 - **Filtreleme:** Tarih, ürün, depo, şoför, plaka, durum, ödeme durumu ve Türkçe karakter uyumlu arama. Toplamlar ve ürün bazında özet gösterilir.
 - **Excel:** Filtrelenmiş seferler veya tüm veriler. Tarihler gerçek Excel tarihidir; sıralama ve filtre çalışır.
@@ -30,7 +42,7 @@ iPhone'dan kullanılacak şekilde tasarlandı. **PHP + SQLite** ile çalışır,
 
 | Konu | Uygulamadaki karşılığı |
 |---|---|
-| Roller | **Yönetici:** kullanıcı yönetimi, yedek, geri yükleme. **Kullanıcı:** sefer, depo, şoför ve ürün işlemleri. |
+| Roller | **Yönetici:** kullanıcı yönetimi, ayarlar, yedek, geri yükleme. **Kullanıcı:** sefer, depo, şoför ve ürün işlemleri. |
 | Kurulum | İlk kurulum sadece `config.local.php` içindeki **kurulum anahtarı** ile yapılabilir. |
 | Şifre | En az 8 karakter. 15 dakikada 5 hatalı denemeden sonra giriş geçici olarak kilitlenir. |
 | İşten ayrılan personel | Kullanıcı **pasifleştirilir**: giriş yapamaz, kayıtları ve geçmişi korunur. |
@@ -71,8 +83,12 @@ iPhone'dan kullanılacak şekilde tasarlandı. **PHP + SQLite** ile çalışır,
    - Hostingin kendi otomatik yedeğini (JetBackup vb.) açın.
    - İlk ZIP yedeği indirin.
    - **Boş bir kurulumda geri yükleme provası yapın.** Yedeğin işe yaradığını görmenin tek yolu budur.
-8. **Kullanıcıları ekleyin:** Personele normal kullanıcı hesabı açın; yönetici sayısını az tutun.
-9. **Deneme sürümünü kapatın:** GitHub Pages deneme sürümü (`docs/`) açıksa personelin oraya veri girmemesi için kapatın. Sayfanın üstünde zaten "DENEME" bandı var.
+8. **Ayarları yapın:** Yönetici → **Ayarlar** sayfasında şunları girin (anlaşmanıza göre):
+   - Fişte görünecek firma adı ve bilgileri
+   - Mal ve nakliye için varsayılan hesap esası (yükleme / boşaltım / düşük olan)
+   - Fire toleransı
+9. **Kullanıcıları ekleyin:** Personele normal kullanıcı hesabı açın; yönetici sayısını az tutun.
+10. **Deneme sürümünü kapatın:** GitHub Pages deneme sürümü (`docs/`) açıksa personelin oraya veri girmemesi için kapatın. Sayfanın üstünde zaten "DENEME" bandı var.
 
 > **Nginx kullanıyorsanız** (.htaccess çalışmaz): veri klasörü zaten web klasörü dışında olmalı. Ek olarak şunu ekleyin:
 > ```nginx

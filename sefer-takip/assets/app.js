@@ -199,6 +199,24 @@
     });
   }
 
+  // Boşaltım kutusu: yazarken fireyi göster
+  $$('input[data-fire-yukleme]').forEach(function (inp) {
+    var kutu = inp.form && inp.form.querySelector('.fire-onizleme');
+    if (!kutu) return;
+    var goster = function () {
+      var y = parseFloat(inp.getAttribute('data-fire-yukleme')) || 0, tol = parseFloat(inp.getAttribute('data-tolerans')) || 0.5;
+      var b = inp.value.trim() === '' ? null : sayiKati(inp.value);
+      if (b === null) { kutu.textContent = inp.value.trim() === '' ? '' : '⚠️ Sayı okunamadı (ör. 26950)'; kutu.className = 'fire-onizleme kirmizi'; return; }
+      if (!y) { kutu.textContent = ''; return; }
+      var fire = y - b, yuzde = fire / y * 100, asim = Math.abs(yuzde) > tol;
+      kutu.textContent = 'Yükleme ' + y.toLocaleString('tr-TR') + ' kg → ' + (fire < 0 ? 'fazla ' : 'fire ') + Math.abs(fire).toLocaleString('tr-TR', { maximumFractionDigits: 3 }) +
+        ' kg (%' + Math.abs(yuzde).toLocaleString('tr-TR', { maximumFractionDigits: 2 }) + ')' + (asim ? ' ⚠️ tolerans %' + tol.toLocaleString('tr-TR') + ' aşıldı' : ' ✅');
+      kutu.className = 'fire-onizleme ' + (asim ? 'kirmizi' : 'soluk');
+    };
+    inp.addEventListener('input', goster);
+    goster();
+  });
+
   // Tablo satırına tıklayınca detaya git
   $$('tr[data-git]').forEach(function (tr) {
     tr.addEventListener('click', function (e) {
@@ -329,7 +347,9 @@
     });
     urun.addEventListener('change', urunFiyatiniYaz);
 
-    var alanlar = { miktar_kg: 'Miktar', urun_ton_fiyat: 'Ürün ton fiyatı', urun_kdv: 'Ürün KDV', nakliye_ton_fiyat: 'Nakliye ton fiyatı', nakliye_kdv: 'Nakliye KDV' };
+    var alanlar = { miktar_kg: 'Yükleme net', bosaltim_kg: 'Boşaltım net', urun_ton_fiyat: 'Ürün ton fiyatı', urun_kdv: 'Ürün KDV', nakliye_ton_fiyat: 'Nakliye ton fiyatı', nakliye_kdv: 'Nakliye KDV' };
+    var esasAd = { yukleme: 'yükleme kantarı', bosaltim: 'boşaltım kantarı', dusuk: 'düşük olan' };
+    var tolerans = parseFloat(sf.getAttribute('data-tolerans')) || 0.5;
     var hesapla = function () {
       var d = {}, sorunlar = [];
       Object.keys(alanlar).forEach(function (k) {
@@ -339,19 +359,39 @@
         else if (v < 0) sorunlar.push(alanlar[k] + ' negatif olamaz');
         d[k] = v || 0;
       });
-      var el = $('#hesap-ozet'), ton = d.miktar_kg / 1000;
-      var mal = ton * d.urun_ton_fiyat, malK = mal * d.urun_kdv / 100;
-      var nak = ton * d.nakliye_ton_fiyat, nakK = nak * d.nakliye_kdv / 100;
-      var s = function (a, b, k) { return '<div class="satir' + (k ? ' kalin' : '') + '"><span>' + a + '</span><span>' + b + '</span></div>'; };
+      var y = d.miktar_kg, bVar = $('#bosaltim_kg').value.trim() !== '' && sayiKati($('#bosaltim_kg').value) !== null, b = bVar ? d.bosaltim_kg : null;
+      var esasKg = function (esas) {
+        if (b === null) return y;
+        if (esas === 'bosaltim') return b;
+        if (esas === 'dusuk') return Math.min(y, b);
+        return y;
+      };
+      var malEsas = $('#mal_esas').value, nakEsas = $('#nakliye_esas').value;
+      var malKg = esasKg(malEsas), nakKg = esasKg(nakEsas);
+      var mal = malKg / 1000 * d.urun_ton_fiyat, malK = mal * d.urun_kdv / 100;
+      var nak = nakKg / 1000 * d.nakliye_ton_fiyat, nakK = nak * d.nakliye_kdv / 100;
+      var kg = function (n) { return n.toLocaleString('tr-TR', { maximumFractionDigits: 3 }); };
+      var s = function (a, v, k) { return '<div class="satir' + (k ? ' kalin' : '') + '"><span>' + a + '</span><span>' + v + '</span></div>'; };
       var html = sorunlar.length ? '<div class="satir kirmizi">⚠️ ' + sorunlar.join(', ') + ' — sadece rakam girin (ör. 27000 veya 9.000,50)</div>' : '';
-      if (d.miktar_kg) {
-        html += s('Miktar', d.miktar_kg.toLocaleString('tr-TR') + ' kg = ' + ton.toLocaleString('tr-TR', { maximumFractionDigits: 3 }) + ' ton', true) +
+      if (y || b) {
+        html += s('Yükleme kantarı', kg(y) + ' kg', true);
+        if (b !== null) {
+          var fire = y - b, yuzde = y > 0 ? fire / y * 100 : 0, asim = Math.abs(yuzde) > tolerans;
+          html += s('Boşaltım kantarı', kg(b) + ' kg', true) +
+            '<div class="satir' + (asim ? ' kirmizi' : '') + '"><span>' + (fire < 0 ? 'Fazla' : 'Fire') + '</span><span>' + kg(Math.abs(fire)) + ' kg (%' +
+            Math.abs(yuzde).toLocaleString('tr-TR', { maximumFractionDigits: 2 }) + ')' + (asim ? ' ⚠️ tolerans %' + tolerans.toLocaleString('tr-TR') + ' aşıldı' : '') + '</span></div>';
+        }
+        var gec = function (esas) { return b === null && esas !== 'yukleme' ? ' — geçici, boşaltım girilmedi' : ''; };
+        html += s('Mal bedeli esası', esasAd[malEsas] + ' · ' + kg(malKg) + ' kg' + gec(malEsas)) +
           s('Mal bedeli (KDV hariç)', tl(mal)) + s('Mal KDV', tl(malK)) + s('Mal bedeli (KDV dahil)', tl(mal + malK), true) +
+          s('Nakliye esası', esasAd[nakEsas] + ' · ' + kg(nakKg) + ' kg' + gec(nakEsas)) +
           s('Nakliye (KDV hariç)', tl(nak)) + s('Nakliye KDV', tl(nakK)) + s('Nakliye (KDV dahil)', tl(nak + nakK), true);
-        if (d.miktar_kg > 60000) html += '<div class="satir kirmizi">⚠️ 60 tonun üzerinde, miktarı kontrol edin.</div>';
+        if (y > 60000) html += '<div class="satir kirmizi">⚠️ 60 tonun üzerinde, miktarı kontrol edin.</div>';
       }
-      el.innerHTML = html;
+      $('#hesap-ozet').innerHTML = html;
     };
+    $('#mal_esas').addEventListener('change', hesapla);
+    $('#nakliye_esas').addEventListener('change', hesapla);
     Object.keys(alanlar).forEach(function (i) { $('#' + i).addEventListener('input', hesapla); });
 
     // Taslak geri yüklendiğinde / başka sayfadan dönüşte ön seçimleri uygula

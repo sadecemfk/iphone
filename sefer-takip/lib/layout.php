@@ -20,6 +20,7 @@ function sayfa_bas($baslik, $aktif = '')
     ];
     if (yonetici_mi()) {
         $menu['yedek'] = ['Yedek / Excel', '💾'];
+        $menu['ayarlar'] = ['Ayarlar', '⚙️'];
     }
     // Başarılı kayıttan sonra tarayıcıdaki form taslağını sil
     $taslakTemizle = implode(',', $_SESSION['taslak_temizle'] ?? []);

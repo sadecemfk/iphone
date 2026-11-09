@@ -189,7 +189,7 @@ function db_close()
 
 function db_migrate(PDO $pdo)
 {
-    $hedef = 2;
+    $hedef = 3;
     if ((int)$pdo->query('PRAGMA user_version')->fetchColumn() >= $hedef) {
         return;
     }
@@ -333,6 +333,22 @@ function db_migrate(PDO $pdo)
                 deger TEXT
             );
             ");
+        }
+        if ($v < 3) {
+            // Şema v3: iki taraflı sefer (boşaltım kantarı / irsaliyesi) ve ücret hesap esası
+            $kolonlar = array_column($pdo->query('PRAGMA table_info(seferler)')->fetchAll(), 'name');
+            $ekle = [
+                'bosaltim_kg' => 'REAL',
+                'bosaltim_irsaliye_no' => 'TEXT',
+                'bosaltim_kantar_fis_no' => 'TEXT',
+                'mal_esas' => "TEXT NOT NULL DEFAULT 'yukleme'",
+                'nakliye_esas' => "TEXT NOT NULL DEFAULT 'yukleme'",
+            ];
+            foreach ($ekle as $kolon => $tanim) {
+                if (!in_array($kolon, $kolonlar, true)) {
+                    $pdo->exec("ALTER TABLE seferler ADD COLUMN $kolon $tanim");
+                }
+            }
         }
         $pdo->exec('PRAGMA user_version = ' . $hedef);
         $pdo->exec('COMMIT');
@@ -904,6 +920,12 @@ function sayi_alani($ad, $etiket, array &$hatalar, $min = 0.0, $max = null)
     return $v;
 }
 
+/** Boş bırakılabilen sayı alanı: boşsa NULL döner (ör. henüz girilmemiş boşaltım kantarı) */
+function sayi_alani_bos($ad, $etiket, array &$hatalar, $min = 0.0, $max = null)
+{
+    return post($ad) === '' ? null : sayi_alani($ad, $etiket, $hatalar, $min, $max);
+}
+
 function para($n, $ond = 2)
 {
     return number_format((float)$n, $ond, ',', '.');
@@ -1265,9 +1287,35 @@ const DURUMLAR = [
 ];
 
 const BELGE_TURLERI = [
-    'irsaliye' => 'İrsaliye',
-    'kantar' => 'Kantar Fişi',
-    'diger' => 'Diğer',
+    'irsaliye' => 'Yükleme İrsaliyesi',
+    'kantar' => 'Yükleme Kantar Fişi',
+    'bosaltim_irsaliye' => 'Boşaltım İrsaliyesi',
+    'bosaltim_kantar' => 'Boşaltım Kantar Fişi',
+    'diger' => 'Diğer Belge',
+];
+
+/** Belge türü → seferdeki numara alanı */
+const BELGE_NO_ALANI = [
+    'irsaliye' => 'irsaliye_no',
+    'kantar' => 'kantar_fis_no',
+    'bosaltim_irsaliye' => 'bosaltim_irsaliye_no',
+    'bosaltim_kantar' => 'bosaltim_kantar_fis_no',
+];
+
+/** Belge hangi tarafa ait */
+const BELGE_TARAFI = [
+    'irsaliye' => 'yukleme',
+    'kantar' => 'yukleme',
+    'bosaltim_irsaliye' => 'bosaltim',
+    'bosaltim_kantar' => 'bosaltim',
+    'diger' => 'diger',
+];
+
+/** Ücret hesabında esas alınacak ağırlık */
+const ESASLAR = [
+    'yukleme' => 'Yükleme kantarı',
+    'bosaltim' => 'Boşaltım kantarı',
+    'dusuk' => 'Hangisi düşükse',
 ];
 
 /** Değişiklik geçmişinde gösterilecek alan adları */
@@ -1275,9 +1323,11 @@ const ALAN_ETIKETLERI = [
     'tarih' => 'Yükleme tarihi', 'teslim_tarihi' => 'Teslim tarihi', 'durum' => 'Durum',
     'yukleme_depo_id' => 'Yükleme deposu', 'bosaltim_depo_id' => 'Boşaltım deposu',
     'sofor_id' => 'Şoför', 'sofor_telefon' => 'Telefon', 'cekici_plaka' => 'Çekici plaka', 'dorse_plaka' => 'Dorse plaka',
-    'urun_id' => 'Ürün', 'miktar_kg' => 'Miktar (kg)', 'urun_ton_fiyat' => 'Ürün ton fiyatı', 'urun_kdv' => 'Ürün KDV %',
+    'urun_id' => 'Ürün', 'miktar_kg' => 'Yükleme net (kg)', 'urun_ton_fiyat' => 'Ürün ton fiyatı', 'urun_kdv' => 'Ürün KDV %',
     'nakliye_ton_fiyat' => 'Nakliye ton fiyatı', 'nakliye_kdv' => 'Nakliye KDV %', 'nakliye_odendi' => 'Nakliye ödendi',
-    'irsaliye_no' => 'İrsaliye no', 'kantar_fis_no' => 'Kantar fiş no', 'notlar' => 'Notlar', 'silindi' => 'Silindi',
+    'irsaliye_no' => 'Yükleme irsaliye no', 'kantar_fis_no' => 'Yükleme kantar fiş no', 'notlar' => 'Notlar', 'silindi' => 'Silindi',
+    'bosaltim_kg' => 'Boşaltım net (kg)', 'bosaltim_irsaliye_no' => 'Boşaltım irsaliye no', 'bosaltim_kantar_fis_no' => 'Boşaltım kantar fiş no',
+    'mal_esas' => 'Mal bedeli hesap esası', 'nakliye_esas' => 'Nakliye hesap esası',
     'tur' => 'Belge türü', 'orijinal_ad' => 'Dosya adı', 'olusturan' => 'Oluşturan',
 ];
 
@@ -1309,7 +1359,11 @@ function gecmis_deger($alan, $deger)
         case 'teslim_tarihi':
             return tarih_tr($deger);
         case 'miktar_kg':
-            return kg_fmt($deger);
+        case 'bosaltim_kg':
+            return kg_fmt($deger) . ' kg';
+        case 'mal_esas':
+        case 'nakliye_esas':
+            return ESASLAR[$deger] ?? $deger;
         case 'urun_ton_fiyat':
         case 'nakliye_ton_fiyat':
             return tl($deger);
@@ -1320,16 +1374,77 @@ function gecmis_deger($alan, $deger)
     return (string)$deger;
 }
 
-/** Sefer tutar hesapları */
+/** Ayar: önce yönetici ayarları (veritabanı), yoksa config */
+function ayar_deger($k)
+{
+    $v = ayar($k);
+    return $v !== null && $v !== '' ? $v : cfg($k);
+}
+
+/** Fire toleransı (%) — aşılırsa uyarı verilir */
+function fire_toleransi()
+{
+    static $t = null;
+    if ($t === null) {
+        $v = sayi_kati((string)ayar_deger('fire_tolerans_yuzde'));
+        $t = $v === null || $v < 0 ? 0.5 : $v;
+    }
+    return $t;
+}
+
+function bosaltim_kg_var(array $s)
+{
+    return isset($s['bosaltim_kg']) && $s['bosaltim_kg'] !== null && $s['bosaltim_kg'] !== '';
+}
+
+/** Ücrete esas ağırlık (kg). Boşaltım kantarı henüz girilmediyse yükleme kullanılır. */
+function esas_kg(array $s, $esas)
+{
+    $y = (float)$s['miktar_kg'];
+    if (!bosaltim_kg_var($s)) {
+        return $y;
+    }
+    $b = (float)$s['bosaltim_kg'];
+    if ($esas === 'bosaltim') {
+        return $b;
+    }
+    if ($esas === 'dusuk') {
+        return min($y, $b);
+    }
+    return $y;
+}
+
+/** Aynı esası SQL içinde hesaplayan ifade (s takma adlı seferler tablosu için) */
+function sql_esas_kg($esasKolonu)
+{
+    return "(CASE s.$esasKolonu WHEN 'bosaltim' THEN COALESCE(s.bosaltim_kg, s.miktar_kg)"
+        . " WHEN 'dusuk' THEN MIN(s.miktar_kg, COALESCE(s.bosaltim_kg, s.miktar_kg)) ELSE s.miktar_kg END)";
+}
+
+/** Sefer tutar ve fire hesapları */
 function hesap(array $s)
 {
-    $ton = (float)$s['miktar_kg'] / 1000;
-    $mal = $ton * (float)$s['urun_ton_fiyat'];
+    $malEsas = $s['mal_esas'] ?? 'yukleme';
+    $nakEsas = $s['nakliye_esas'] ?? 'yukleme';
+    $malKg = esas_kg($s, $malEsas);
+    $nakKg = esas_kg($s, $nakEsas);
+    $mal = $malKg / 1000 * (float)$s['urun_ton_fiyat'];
     $malKdv = $mal * (float)$s['urun_kdv'] / 100;
-    $nak = $ton * (float)$s['nakliye_ton_fiyat'];
+    $nak = $nakKg / 1000 * (float)$s['nakliye_ton_fiyat'];
     $nakKdv = $nak * (float)$s['nakliye_kdv'] / 100;
+    $bosVar = bosaltim_kg_var($s);
+    $y = (float)$s['miktar_kg'];
+    $fireKg = $bosVar ? $y - (float)$s['bosaltim_kg'] : null;
     return [
-        'ton' => $ton,
+        'ton' => $y / 1000,
+        'bos_kg' => $bosVar ? (float)$s['bosaltim_kg'] : null,
+        'fire_kg' => $fireKg,
+        'fire_yuzde' => $bosVar && $y > 0 ? $fireKg / $y * 100 : null,
+        'mal_kg' => $malKg,
+        'nak_kg' => $nakKg,
+        // Esas boşaltım ama kantar henüz girilmedi: tutar geçici olarak yüklemeye göre
+        'mal_gecici' => !$bosVar && $malEsas !== 'yukleme',
+        'nak_gecici' => !$bosVar && $nakEsas !== 'yukleme',
         'mal' => $mal,
         'mal_kdv' => $malKdv,
         'mal_toplam' => $mal + $malKdv,
@@ -1337,6 +1452,42 @@ function hesap(array $s)
         'nak_kdv' => $nakKdv,
         'nak_toplam' => $nak + $nakKdv,
     ];
+}
+
+/** Fire durumu: null (boşaltım girilmedi) | 'normal' | 'asim' (eksik çıktı) | 'fazla' (fazla çıktı) */
+function fire_durumu(array $h)
+{
+    if ($h['fire_yuzde'] === null) {
+        return null;
+    }
+    $t = fire_toleransi();
+    if ($h['fire_yuzde'] > $t) {
+        return 'asim';
+    }
+    if ($h['fire_yuzde'] < -$t) {
+        return 'fazla';
+    }
+    return 'normal';
+}
+
+/** "200 kg (%0,74)" */
+function fire_metni(array $h)
+{
+    if ($h['fire_kg'] === null) {
+        return '';
+    }
+    return kg_fmt($h['fire_kg']) . ' kg (%' . sayi_fmt($h['fire_yuzde'], 2) . ')';
+}
+
+function fire_rozet(array $h)
+{
+    $d = fire_durumu($h);
+    if ($d === null) {
+        return '';
+    }
+    $sinif = ['normal' => 'd-teslim', 'asim' => 'd-iptal', 'fazla' => 'd-yuklendi'][$d];
+    $on = ['normal' => 'Fire ', 'asim' => '⚠️ Fire ', 'fazla' => '⚠️ Fazla '][$d];
+    return '<span class="rozet ' . $sinif . '">' . h($on . fire_metni($h)) . '</span>';
 }
 
 function depo_etiket($d)
@@ -1380,6 +1531,48 @@ function sefer_telefon(array $s)
     return trim((string)($s['sofor_telefon'] ?? '')) !== '' ? $s['sofor_telefon'] : (string)($s['sofor_kart_telefon'] ?? '');
 }
 
+/** Sefer kaydından sonra kaydı ENGELLEMEYEN uyarılar (sefer formu ve boşaltım kutusu kullanır) */
+function sefer_kayit_uyarilari($id, $yeniSofor = null)
+{
+    $s = one('SELECT s.*, so.telefon AS sofor_kart_telefon FROM seferler s LEFT JOIN soforler so ON so.id = s.sofor_id WHERE s.id = ?', [(int)$id]);
+    if (!$s) {
+        return;
+    }
+    $h = hesap($s);
+    if ((float)$s['miktar_kg'] > 60000) {
+        mesaj('Dikkat: Yükleme ' . kg_fmt($s['miktar_kg']) . ' kg (60 tonun üzerinde). Doğru mu?', 'dikkat');
+    }
+    if ((float)$s['miktar_kg'] <= 0 && in_array($s['durum'], ['yuklendi', 'teslim'], true)) {
+        mesaj('Dikkat: Araç yüklendi görünüyor ama yükleme kantarı (kg) girilmemiş.', 'dikkat');
+    }
+    $fd = fire_durumu($h);
+    if ($fd === 'asim') {
+        mesaj('Dikkat: Fire ' . fire_metni($h) . ' — tolerans (%' . sayi_fmt(fire_toleransi(), 2) . ') aşıldı. Yükleme ve boşaltım kantarını kontrol edin.', 'dikkat');
+    } elseif ($fd === 'fazla') {
+        mesaj('Dikkat: Boşaltım kantarı yüklemeden ' . kg_fmt(-$h['fire_kg']) . ' kg FAZLA çıktı. Kantar değerlerini kontrol edin.', 'dikkat');
+    }
+    if (bosaltim_kg_var($s) && !in_array($s['durum'], ['teslim', 'iptal'], true)) {
+        mesaj('Dikkat: Boşaltım kantarı girildi ama durum hâlâ "' . (DURUMLAR[$s['durum']] ?? $s['durum']) . '". Teslim edildiyse durumu güncelleyin.', 'dikkat');
+    }
+    $tel = sefer_telefon($s);
+    if ($tel !== '' && !cep_telefonu_mu($tel)) {
+        mesaj('Dikkat: Telefon numarası cep telefonu biçiminde değil (ör. 0544 406 74 94); WhatsApp açılmayabilir.', 'dikkat');
+    }
+    if ($yeniSofor && $yeniSofor['tc'] !== '' && !tc_gecerli($yeniSofor['tc'])) {
+        mesaj('Dikkat: Şoförün TC kimlik numarası geçersiz görünüyor, kontrol edin.', 'dikkat');
+    }
+    $adlar = ['irsaliye_no' => 'yükleme irsaliye no', 'kantar_fis_no' => 'yükleme kantar fiş no',
+        'bosaltim_irsaliye_no' => 'boşaltım irsaliye no', 'bosaltim_kantar_fis_no' => 'boşaltım kantar fiş no'];
+    foreach ($adlar as $alan => $ad) {
+        if ((string)$s[$alan] !== '') {
+            $ayni = all("SELECT id FROM seferler WHERE $alan = ? AND id != ? AND silindi = 0 LIMIT 5", [$s[$alan], (int)$id]);
+            if ($ayni) {
+                mesaj('Dikkat: Bu ' . $ad . ' (' . $s[$alan] . ') başka seferde de kayıtlı: #' . implode(', #', array_column($ayni, 'id')) . '. Mükerrer kayıt olmasın?', 'dikkat');
+            }
+        }
+    }
+}
+
 /** Şoföre gidecek WhatsApp mesajı */
 function wa_mesaj(array $s, $konum = true, $belge = true)
 {
@@ -1417,13 +1610,8 @@ function wa_mesaj(array $s, $konum = true, $belge = true)
             $sat[] = '';
             $sat[] = '📄 *BELGELER:*';
             foreach ($belgeler as $b) {
-                $no = '';
-                if ($b['tur'] === 'irsaliye' && $s['irsaliye_no']) {
-                    $no = ' (No: ' . $s['irsaliye_no'] . ')';
-                }
-                if ($b['tur'] === 'kantar' && $s['kantar_fis_no']) {
-                    $no = ' (No: ' . $s['kantar_fis_no'] . ')';
-                }
+                $alan = BELGE_NO_ALANI[$b['tur']] ?? null;
+                $no = $alan && !empty($s[$alan]) ? ' (No: ' . $s[$alan] . ')' : '';
                 $sat[] = (BELGE_TURLERI[$b['tur']] ?? 'Belge') . $no . ': ' . belge_link($b['token']);
             }
         }

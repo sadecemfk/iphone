@@ -21,14 +21,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'cekici_plaka' => plaka(post('cekici_plaka')),
         'dorse_plaka' => plaka(post('dorse_plaka')),
         'urun_id' => (int)post('urun_id') ?: null,
-        'miktar_kg' => sayi_alani('miktar_kg', 'Miktar (kg)', $hatalar, 0, 1000000),
+        // Yükleme tarafı
+        'miktar_kg' => sayi_alani('miktar_kg', 'Yükleme net (kg)', $hatalar, 0, 1000000),
+        'irsaliye_no' => post('irsaliye_no'),
+        'kantar_fis_no' => post('kantar_fis_no'),
+        // Boşaltım tarafı (araç boşaltınca doldurulur)
+        'bosaltim_kg' => sayi_alani_bos('bosaltim_kg', 'Boşaltım net (kg)', $hatalar, 0, 1000000),
+        'bosaltim_irsaliye_no' => post('bosaltim_irsaliye_no'),
+        'bosaltim_kantar_fis_no' => post('bosaltim_kantar_fis_no'),
+        // Ücretler
         'urun_ton_fiyat' => sayi_alani('urun_ton_fiyat', 'Ürün ton fiyatı', $hatalar, 0),
         'urun_kdv' => sayi_alani('urun_kdv', 'Ürün KDV oranı', $hatalar, 0, 100),
         'nakliye_ton_fiyat' => sayi_alani('nakliye_ton_fiyat', 'Nakliye ton fiyatı', $hatalar, 0),
         'nakliye_kdv' => sayi_alani('nakliye_kdv', 'Nakliye KDV oranı', $hatalar, 0, 100),
+        'mal_esas' => isset(ESASLAR[post('mal_esas')]) ? post('mal_esas') : 'yukleme',
+        'nakliye_esas' => isset(ESASLAR[post('nakliye_esas')]) ? post('nakliye_esas') : 'yukleme',
         'nakliye_odendi' => post('nakliye_odendi') ? 1 : 0,
-        'irsaliye_no' => post('irsaliye_no'),
-        'kantar_fis_no' => post('kantar_fis_no'),
         'notlar' => post('notlar'),
     ];
 
@@ -37,9 +45,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $hatalar[] = 'Geçerli bir yükleme tarihi giriniz.';
     }
     if ($veri['teslim_tarihi'] !== null && !tarih_gecerli($veri['teslim_tarihi'])) {
-        $hatalar[] = 'Teslim tarihi geçersiz.';
+        $hatalar[] = 'Boşaltım (teslim) tarihi geçersiz.';
     } elseif ($veri['teslim_tarihi'] !== null && tarih_gecerli($veri['tarih']) && $veri['teslim_tarihi'] < $veri['tarih']) {
-        $hatalar[] = 'Teslim tarihi, yükleme tarihinden önce olamaz.';
+        $hatalar[] = 'Boşaltım (teslim) tarihi, yükleme tarihinden önce olamaz.';
     }
 
     // Depolar gerçekten var mı ve doğru türde mi?
@@ -102,29 +110,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         foreach (belgeleri_isle($id) as $e) {
             mesaj($e, 'hata');
         }
-
-        // Kaydı engellemeyen uyarılar
-        if ($veri['miktar_kg'] > 60000) {
-            mesaj('Dikkat: Miktar ' . kg_fmt($veri['miktar_kg']) . ' kg (60 tonun üzerinde). Doğru mu?', 'dikkat');
-        }
-        if ($veri['miktar_kg'] <= 0 && in_array($veri['durum'], ['yuklendi', 'teslim'], true)) {
-            mesaj('Dikkat: Araç yüklendi görünüyor ama miktar girilmemiş.', 'dikkat');
-        }
-        $tel = $veri['sofor_telefon'] !== '' ? $veri['sofor_telefon'] : (string)(one('SELECT telefon FROM soforler WHERE id = ?', [(int)$veri['sofor_id']])['telefon'] ?? '');
-        if ($tel !== '' && !cep_telefonu_mu($tel)) {
-            mesaj('Dikkat: Telefon numarası cep telefonu biçiminde değil (ör. 0544 406 74 94); WhatsApp açılmayabilir.', 'dikkat');
-        }
-        if ($yeniSofor && $yeniSofor['tc'] !== '' && !tc_gecerli($yeniSofor['tc'])) {
-            mesaj('Dikkat: Şoförün TC kimlik numarası geçersiz görünüyor, kontrol edin.', 'dikkat');
-        }
-        foreach (['irsaliye_no' => 'irsaliye no', 'kantar_fis_no' => 'kantar fiş no'] as $alan => $ad) {
-            if ($veri[$alan] !== '') {
-                $ayni = all("SELECT id FROM seferler WHERE $alan = ? AND id != ? AND silindi = 0 LIMIT 5", [$veri[$alan], $id]);
-                if ($ayni) {
-                    mesaj('Dikkat: Bu ' . $ad . ' (' . $veri[$alan] . ') başka seferde de kayıtlı: #' . implode(', #', array_column($ayni, 'id')) . '. Mükerrer kayıt olmasın?', 'dikkat');
-                }
-            }
-        }
+        sefer_kayit_uyarilari($id, $yeniSofor);
         $_SESSION['taslak_temizle'][] = $taslakAnahtari;
         mesaj($s ? 'Sefer güncellendi.' : 'Sefer kaydedildi. Şimdi şoföre WhatsApp ile gönderebilirsiniz.');
         yonlendir('index.php?p=sefer&id=' . $id);
@@ -132,7 +118,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $s = array_merge($s ?: [], $veri);
     $s['sofor_id'] = $soforSecim === 'yeni' ? 'yeni' : $veri['sofor_id'];
     // Formda kullanıcının yazdığı ham değerler gösterilsin
-    foreach (['miktar_kg', 'urun_ton_fiyat', 'urun_kdv', 'nakliye_ton_fiyat', 'nakliye_kdv'] as $alan) {
+    foreach (['miktar_kg', 'bosaltim_kg', 'urun_ton_fiyat', 'urun_kdv', 'nakliye_ton_fiyat', 'nakliye_kdv'] as $alan) {
         $s[$alan . '_ham'] = post($alan);
     }
 }
@@ -143,10 +129,13 @@ if (!$s) {
     $s = [
         'tarih' => date('Y-m-d'), 'teslim_tarihi' => '', 'durum' => 'yuklendi',
         'yukleme_depo_id' => '', 'bosaltim_depo_id' => '', 'sofor_id' => '', 'sofor_telefon' => '',
-        'cekici_plaka' => '', 'dorse_plaka' => '', 'urun_id' => '', 'miktar_kg' => '',
+        'cekici_plaka' => '', 'dorse_plaka' => '', 'urun_id' => '',
+        'miktar_kg' => '', 'irsaliye_no' => '', 'kantar_fis_no' => '',
+        'bosaltim_kg' => null, 'bosaltim_irsaliye_no' => '', 'bosaltim_kantar_fis_no' => '',
         'urun_ton_fiyat' => '', 'urun_kdv' => cfg('varsayilan_urun_kdv', 20),
         'nakliye_ton_fiyat' => $son ? $son['nakliye_ton_fiyat'] : '', 'nakliye_kdv' => $son ? $son['nakliye_kdv'] : cfg('varsayilan_nakliye_kdv', 20),
-        'nakliye_odendi' => 0, 'irsaliye_no' => '', 'kantar_fis_no' => '', 'notlar' => '',
+        'mal_esas' => ayar_deger('varsayilan_mal_esas') ?: 'yukleme', 'nakliye_esas' => ayar_deger('varsayilan_nakliye_esas') ?: 'yukleme',
+        'nakliye_odendi' => 0, 'notlar' => '',
     ];
 }
 
@@ -169,7 +158,23 @@ $sid = $id ? '&sid=' . $id : '';
 
 /** Sayı alanının formdaki değeri: hatalı gönderimde kullanıcının yazdığı metin */
 $deger = function ($alan) use ($s) {
-    return array_key_exists($alan . '_ham', $s) ? $s[$alan . '_ham'] : sayi_input($s[$alan]);
+    return array_key_exists($alan . '_ham', $s) ? $s[$alan . '_ham'] : sayi_input($s[$alan] ?? '');
+};
+$belgeLinkleri = function ($turler) use ($mevcutBelgeler) {
+    $o = [];
+    foreach ($mevcutBelgeler as $b) {
+        if (in_array($b['tur'], $turler, true)) {
+            $o[] = '<a target="_blank" href="belge.php?t=' . h($b['token']) . '">' . h(BELGE_TURLERI[$b['tur']] ?? 'Belge') . '</a>';
+        }
+    }
+    return $o ? '<p class="soluk kucuk-yazi">Yüklü: ' . implode(' · ', $o) . ' (silmek için sefer sayfasını kullanın)</p>' : '';
+};
+$esasSecenek = function ($ad, $secili) {
+    $o = '<select name="' . $ad . '" id="' . $ad . '">';
+    foreach (ESASLAR as $k => $v) {
+        $o .= '<option value="' . $k . '"' . ($secili === $k ? ' selected' : '') . '>' . h($v) . '</option>';
+    }
+    return $o . '</select>';
 };
 
 sayfa_bas($id ? "Sefer #$id Düzenle" : 'Yeni Sefer', 'sefer_form');
@@ -182,15 +187,14 @@ sayfa_bas($id ? "Sefer #$id Düzenle" : 'Yeni Sefer', 'sefer_form');
 
 <form method="post" enctype="multipart/form-data" class="form" id="sefer-form"
   data-taslak="<?= h($taslakAnahtari) ?>" <?= get('taslak') === '1' ? 'data-taslak-oto="1"' : '' ?>
-  data-on-secim="<?= h(json_encode($onSecim)) ?>"
+  data-on-secim="<?= h(json_encode($onSecim)) ?>" data-tolerans="<?= h((string)fire_toleransi()) ?>"
   data-max-dosya="<?= (int)$sinir['dosya'] ?>" data-max-toplam="<?= (int)$sinir['toplam'] ?>" data-max-adet="<?= (int)$sinir['adet'] ?>">
   <?= csrf_alan() ?>
   <div class="kart">
     <h2>Genel</h2>
-    <div class="uc">
+    <div class="iki">
       <label>Yükleme tarihi *<input type="date" name="tarih" required value="<?= h($s['tarih']) ?>"></label>
       <label>Durum<select name="durum"><?php foreach (DURUMLAR as $k => $v): ?><option value="<?= $k ?>" <?= $s['durum'] === $k ? 'selected' : '' ?>><?= h($v) ?></option><?php endforeach; ?></select></label>
-      <label>Teslim tarihi<input type="date" name="teslim_tarihi" value="<?= h($s['teslim_tarihi']) ?>"></label>
     </div>
   </div>
 
@@ -235,8 +239,38 @@ sayfa_bas($id ? "Sefer #$id Düzenle" : 'Yeni Sefer', 'sefer_form');
     <p class="soluk kucuk-yazi">Telefon boş bırakılırsa şoför kartındaki numara kullanılır.</p>
   </div>
 
+  <div class="kart taraf yukleme-tarafi">
+    <h2>📦 Yükleme Tarafı</h2>
+    <div class="uc">
+      <label>Yükleme kantarı net (kg)<input name="miktar_kg" id="miktar_kg" inputmode="decimal" value="<?= h($deger('miktar_kg')) ?>" placeholder="27000"></label>
+      <label>Yükleme irsaliye no<input name="irsaliye_no" value="<?= h($s['irsaliye_no']) ?>"></label>
+      <label>Yükleme kantar fiş no<input name="kantar_fis_no" value="<?= h($s['kantar_fis_no']) ?>"></label>
+    </div>
+    <div class="iki">
+      <label class="dosya">📄 Yükleme irsaliyesi (PDF / foto)<input type="file" name="belge_irsaliye[]" multiple accept="application/pdf,image/*"></label>
+      <label class="dosya">⚖️ Yükleme kantar fişi (PDF / foto)<input type="file" name="belge_kantar[]" multiple accept="application/pdf,image/*"></label>
+    </div>
+    <?= $belgeLinkleri(['irsaliye', 'kantar']) ?>
+  </div>
+
+  <div class="kart taraf bosaltim-tarafi">
+    <h2>🏁 Boşaltım Tarafı</h2>
+    <p class="soluk kucuk-yazi">Araç boşaltınca doldurun. Sefer sayfasındaki "Boşaltımı Kaydet" kutusundan da girilebilir.</p>
+    <div class="iki">
+      <label>Boşaltım (teslim) tarihi<input type="date" name="teslim_tarihi" value="<?= h($s['teslim_tarihi']) ?>"></label>
+      <label>Boşaltım kantarı net (kg)<input name="bosaltim_kg" id="bosaltim_kg" inputmode="decimal" value="<?= h($deger('bosaltim_kg')) ?>" placeholder="Boşaltımda tartılan"></label>
+      <label>Boşaltım irsaliye no<input name="bosaltim_irsaliye_no" value="<?= h($s['bosaltim_irsaliye_no'] ?? '') ?>"></label>
+      <label>Boşaltım kantar fiş no<input name="bosaltim_kantar_fis_no" value="<?= h($s['bosaltim_kantar_fis_no'] ?? '') ?>"></label>
+    </div>
+    <div class="iki">
+      <label class="dosya">📄 Boşaltım irsaliyesi (PDF / foto)<input type="file" name="belge_bosaltim_irsaliye[]" multiple accept="application/pdf,image/*"></label>
+      <label class="dosya">⚖️ Boşaltım kantar fişi (PDF / foto)<input type="file" name="belge_bosaltim_kantar[]" multiple accept="application/pdf,image/*"></label>
+    </div>
+    <?= $belgeLinkleri(['bosaltim_irsaliye', 'bosaltim_kantar']) ?>
+  </div>
+
   <div class="kart">
-    <h2>Yük ve Ücret</h2>
+    <h2>Ürün ve Ücret</h2>
     <div class="iki">
       <label>Ürün
         <select name="urun_id" id="urun_id">
@@ -247,7 +281,7 @@ sayfa_bas($id ? "Sefer #$id Düzenle" : 'Yeni Sefer', 'sefer_form');
         </select>
         <a class="kucuk-link taslak-link" href="index.php?p=urun_form&don=sefer<?= $sid ?>">+ yeni ürün</a>
       </label>
-      <label>Miktar (kg)<input name="miktar_kg" id="miktar_kg" inputmode="decimal" value="<?= h($deger('miktar_kg')) ?>" placeholder="27000"></label>
+      <label class="onay"><input type="checkbox" name="nakliye_odendi" value="1" <?= $s['nakliye_odendi'] ? 'checked' : '' ?>> Nakliye ücreti şoföre ödendi</label>
     </div>
     <div class="iki">
       <label>Ürün ton fiyatı (₺, KDV hariç)<input name="urun_ton_fiyat" id="urun_ton_fiyat" inputmode="decimal" value="<?= h($deger('urun_ton_fiyat')) ?>" placeholder="9000"></label>
@@ -255,28 +289,20 @@ sayfa_bas($id ? "Sefer #$id Düzenle" : 'Yeni Sefer', 'sefer_form');
       <label>Nakliye ton fiyatı (₺, KDV hariç)<input name="nakliye_ton_fiyat" id="nakliye_ton_fiyat" inputmode="decimal" value="<?= h($deger('nakliye_ton_fiyat')) ?>" placeholder="100"></label>
       <label>Nakliye KDV (%)<input name="nakliye_kdv" id="nakliye_kdv" inputmode="decimal" value="<?= h($deger('nakliye_kdv')) ?>"></label>
     </div>
-    <label class="onay"><input type="checkbox" name="nakliye_odendi" value="1" <?= $s['nakliye_odendi'] ? 'checked' : '' ?>> Nakliye ücreti şoföre ödendi</label>
+    <details class="esas" <?= ($s['mal_esas'] ?? 'yukleme') !== 'yukleme' || ($s['nakliye_esas'] ?? 'yukleme') !== 'yukleme' ? 'open' : '' ?>>
+      <summary>⚖️ Ücret hangi kantara göre hesaplansın? <span class="soluk">(mal: <?= h(ESASLAR[$s['mal_esas'] ?? 'yukleme']) ?> · nakliye: <?= h(ESASLAR[$s['nakliye_esas'] ?? 'yukleme']) ?>)</span></summary>
+      <div class="iki">
+        <label>Mal bedeli hesabı<?= $esasSecenek('mal_esas', $s['mal_esas'] ?? 'yukleme') ?></label>
+        <label>Nakliye ücreti hesabı<?= $esasSecenek('nakliye_esas', $s['nakliye_esas'] ?? 'yukleme') ?></label>
+      </div>
+      <p class="soluk kucuk-yazi">Boşaltım kantarı henüz girilmediyse tutar geçici olarak yükleme kantarına göre gösterilir. Varsayılanları yönetici "Ayarlar" sayfasından değiştirir.</p>
+    </details>
     <div class="hesap" id="hesap-ozet"></div>
   </div>
 
   <div class="kart">
-    <h2>İrsaliye ve Kantar Fişi</h2>
-    <div class="iki">
-      <label>İrsaliye no<input name="irsaliye_no" value="<?= h($s['irsaliye_no']) ?>"></label>
-      <label>Kantar fiş no<input name="kantar_fis_no" value="<?= h($s['kantar_fis_no']) ?>"></label>
-    </div>
-    <div class="uc">
-      <label class="dosya">📄 İrsaliye PDF / foto<input type="file" name="belge_irsaliye[]" multiple accept="application/pdf,image/*"></label>
-      <label class="dosya">⚖️ Kantar fişi PDF / foto<input type="file" name="belge_kantar[]" multiple accept="application/pdf,image/*"></label>
-      <label class="dosya">📎 Diğer belge<input type="file" name="belge_diger[]" multiple accept="application/pdf,image/*"></label>
-    </div>
+    <label class="dosya">📎 Diğer belge (PDF / foto)<input type="file" name="belge_diger[]" multiple accept="application/pdf,image/*"></label>
     <p class="soluk kucuk-yazi">Dosya başına en fazla <?= h(mb_fmt($sinir['dosya'])) ?>, tek seferde toplam <?= h(mb_fmt($sinir['toplam'])) ?>.</p>
-    <?php if ($mevcutBelgeler): ?>
-      <p class="soluk">Mevcut belgeler: <?php foreach ($mevcutBelgeler as $b): ?><a target="_blank" href="belge.php?t=<?= h($b['token']) ?>"><?= h(BELGE_TURLERI[$b['tur']] ?? 'Belge') ?></a> <?php endforeach; ?> (silmek için sefer detay sayfasını kullanın)</p>
-    <?php endif; ?>
-  </div>
-
-  <div class="kart">
     <label>Notlar<textarea name="notlar" rows="3"><?= h($s['notlar']) ?></textarea></label>
   </div>
 

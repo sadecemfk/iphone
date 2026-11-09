@@ -9,7 +9,8 @@ if (!$s) {
 /** Geçmişteki bir değişikliği geri alınabilir alanlar */
 const GERI_ALINABILIR = ['tarih', 'teslim_tarihi', 'durum', 'yukleme_depo_id', 'bosaltim_depo_id', 'sofor_id', 'sofor_telefon',
     'cekici_plaka', 'dorse_plaka', 'urun_id', 'miktar_kg', 'urun_ton_fiyat', 'urun_kdv', 'nakliye_ton_fiyat', 'nakliye_kdv',
-    'nakliye_odendi', 'irsaliye_no', 'kantar_fis_no', 'notlar', 'silindi'];
+    'nakliye_odendi', 'irsaliye_no', 'kantar_fis_no', 'notlar', 'silindi',
+    'bosaltim_kg', 'bosaltim_irsaliye_no', 'bosaltim_kantar_fis_no', 'mal_esas', 'nakliye_esas'];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $islem = post('islem');
@@ -22,13 +23,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         mesaj("Sefer #$id geri alındı.");
     } elseif ($s['silindi']) {
         mesaj('Bu sefer silinmiş. İşlem yapmak için önce geri alın.', 'hata');
+    } elseif ($islem === 'bosaltim_kaydet') {
+        // Boşaltım tarafı: kantar, irsaliye, tarih ve belgeler
+        $hatalar = [];
+        $v = [
+            'bosaltim_kg' => sayi_alani_bos('bosaltim_kg', 'Boşaltım net (kg)', $hatalar, 0, 1000000),
+            'bosaltim_irsaliye_no' => post('bosaltim_irsaliye_no'),
+            'bosaltim_kantar_fis_no' => post('bosaltim_kantar_fis_no'),
+            'teslim_tarihi' => post('teslim_tarihi') ?: null,
+        ];
+        if ($v['teslim_tarihi'] !== null && !tarih_gecerli($v['teslim_tarihi'])) {
+            $hatalar[] = 'Boşaltım (teslim) tarihi geçersiz.';
+        } elseif ($v['teslim_tarihi'] !== null && $v['teslim_tarihi'] < $s['tarih']) {
+            $hatalar[] = 'Boşaltım (teslim) tarihi, yükleme tarihinden (' . tarih_tr($s['tarih']) . ') önce olamaz.';
+        }
+        if (post('teslim_yap')) {
+            $v['durum'] = 'teslim';
+            if ($v['teslim_tarihi'] === null) {
+                $v['teslim_tarihi'] = date('Y-m-d') >= $s['tarih'] ? date('Y-m-d') : $s['tarih'];
+            }
+        }
+        if ($hatalar) {
+            foreach ($hatalar as $e) {
+                mesaj($e, 'hata');
+            }
+            mesaj('Boşaltım bilgileri kaydedilmedi.', 'hata');
+        } else {
+            kayit_guncelle('seferler', $id, $v);
+            foreach (belgeleri_isle($id) as $e) {
+                mesaj($e, 'hata');
+            }
+            sefer_kayit_uyarilari($id);
+            mesaj('Boşaltım bilgileri kaydedildi.');
+        }
     } elseif ($islem === 'durum' && isset(DURUMLAR[post('durum')])) {
         $v = ['durum' => post('durum')];
         if (post('durum') === 'teslim' && !$s['teslim_tarihi']) {
-            $v['teslim_tarihi'] = date('Y-m-d');
+            $v['teslim_tarihi'] = date('Y-m-d') >= $s['tarih'] ? date('Y-m-d') : $s['tarih'];
         }
         kayit_guncelle('seferler', $id, $v);
         mesaj('Durum güncellendi.');
+        if (post('durum') === 'teslim' && !bosaltim_kg_var($s)) {
+            mesaj('Boşaltım kantarını ve irsaliyesini "Boşaltım Tarafı" kutusundan girmeyi unutmayın.', 'dikkat');
+        }
     } elseif ($islem === 'odendi') {
         kayit_guncelle('seferler', $id, ['nakliye_odendi' => $s['nakliye_odendi'] ? 0 : 1]);
         mesaj('Nakliye ödeme durumu güncellendi.');
@@ -74,7 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $atlanan[] = ALAN_ETIKETLERI[$alan] ?? $alan;
                     continue;
                 }
-                $geri[$alan] = $deger;
+                $geri[$alan] = $deger === '' ? null : $deger;
             }
             if ($geri) {
                 kayit_guncelle($tablo, (int)$g['kayit_id'], $geri, 'geri_al');
@@ -95,6 +132,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $h = hesap($s);
 $belgeler = all('SELECT * FROM belgeler WHERE sefer_id = ? AND silindi = 0 ORDER BY id', [$id]);
+$taraf = ['yukleme' => [], 'bosaltim' => [], 'diger' => []];
+foreach ($belgeler as $b) {
+    $taraf[BELGE_TARAFI[$b['tur']] ?? 'diger'][] = $b;
+}
 $gecmis = all("SELECT * FROM islem_gecmisi WHERE (tablo = 'seferler' AND kayit_id = ?) OR (tablo = 'belgeler' AND kayit_id IN (SELECT id FROM belgeler WHERE sefer_id = ?)) ORDER BY id DESC LIMIT 100", [$id, $id]);
 $tel = sefer_telefon($s);
 $telKarttan = trim((string)$s['sofor_telefon']) === '' && $tel !== '';
@@ -105,6 +146,36 @@ $mHepsi = wa_mesaj($s, true, true);
 $yHarita = harita_link($s['ydepo_lat'], $s['ydepo_lng']);
 $bHarita = harita_link($s['bdepo_lat'], $s['bdepo_lng']);
 $silinmis = (bool)$s['silindi'];
+$bosVar = bosaltim_kg_var($s);
+$sinir = yukleme_sinirlari();
+
+$belgeListesi = function (array $liste, $bosMetin) use ($silinmis, $tel, $id, $s) {
+    if (!$liste) {
+        return '<p class="soluk kucuk-yazi">' . h($bosMetin) . '</p>';
+    }
+    $o = '<div class="belgeler">';
+    foreach ($liste as $b) {
+        $link = belge_link($b['token']);
+        $o .= '<div class="belge"><a target="_blank" href="belge.php?t=' . h($b['token']) . '" class="belge-ad">'
+            . (strpos((string)$b['mime'], 'pdf') !== false ? '📕' : '🖼️') . ' <b>' . h(BELGE_TURLERI[$b['tur']] ?? 'Belge') . '</b> '
+            . '<span class="soluk">' . h($b['orijinal_ad']) . ' · ' . (int)round($b['boyut'] / 1024) . ' KB · ' . h(tarih_tr($b['olusturma'])) . '</span></a>';
+        if (!$silinmis) {
+            $o .= '<div class="butonlar">'
+                . '<a class="btn kucuk wa" target="_blank" rel="noopener" href="' . h(wa_link($tel, (BELGE_TURLERI[$b['tur']] ?? 'Belge') . ' - Sefer #' . $id . ' (' . $s['cekici_plaka'] . ")\n" . $link)) . '">WhatsApp</a>'
+                . '<button type="button" class="btn kucuk" data-kopyala="' . h($link) . '">Linki kopyala</button>'
+                . '<form method="post" class="satir-ici" onsubmit="return confirm(\'Belge kaldırılsın mı? Şoförün elindeki link de çalışmaz.\')">' . csrf_alan()
+                . '<input type="hidden" name="islem" value="belge_sil"><input type="hidden" name="belge_id" value="' . (int)$b['id'] . '"><button class="btn kucuk tehlike">Kaldır</button></form>'
+                . '</div>';
+        }
+        $o .= '</div>';
+    }
+    return $o . '</div>';
+};
+$konumHtml = function ($lat, $lng, $harita, $depoId) {
+    return $harita
+        ? '<a target="_blank" rel="noopener" href="' . h($harita) . '">🗺️ Harita</a> · <a target="_blank" rel="noopener" href="' . h(yol_tarifi_link($lat, $lng)) . '">Yol tarifi</a>'
+        : '<span class="kirmizi">⚠️ Koordinat yok</span> <a href="index.php?p=depo_form&id=' . (int)$depoId . '">ekle</a>';
+};
 
 sayfa_bas("Sefer #$id", 'seferler');
 ?>
@@ -116,13 +187,15 @@ sayfa_bas("Sefer #$id", 'seferler');
 <?php endif; ?>
 
 <div class="baslik-satir">
-  <h1>Sefer #<?= $id ?> <?= durum_rozet($s['durum']) ?></h1>
-  <?php if (!$silinmis): ?>
+  <h1>Sefer #<?= $id ?> <?= durum_rozet($s['durum']) ?> <?= fire_rozet($h) ?></h1>
   <div class="butonlar">
-    <a class="btn" href="index.php?p=sefer_form&id=<?= $id ?>">✏️ Düzenle</a>
-    <a class="btn" href="index.php?p=sefer_form&ydepo=<?= (int)$s['yukleme_depo_id'] ?>&bdepo=<?= (int)$s['bosaltim_depo_id'] ?>">➕ Aynı güzergahta yeni sefer</a>
+    <?php if (!$silinmis): ?>
+      <a class="btn" href="index.php?p=sefer_form&id=<?= $id ?>">✏️ Düzenle</a>
+      <a class="btn" href="index.php?p=sefer_form&ydepo=<?= (int)$s['yukleme_depo_id'] ?>&bdepo=<?= (int)$s['bosaltim_depo_id'] ?>">➕ Aynı güzergahta yeni sefer</a>
+    <?php endif; ?>
+    <a class="btn" target="_blank" href="index.php?p=fis&id=<?= $id ?>">🖨️ Sefer Fişi</a>
+    <a class="btn" target="_blank" href="index.php?p=fis&id=<?= $id ?>&fiyatsiz=1" title="Şoför / fabrika için: fiyatlar gizli">🖨️ Fiyatsız Fiş</a>
   </div>
-  <?php endif; ?>
 </div>
 
 <?php if (!$silinmis): ?>
@@ -154,31 +227,81 @@ sayfa_bas("Sefer #$id", 'seferler');
 <?php endif; ?>
 
 <div class="iki-sutun">
-  <div class="kart">
-    <h2>Güzergah</h2>
-    <div class="guzergah">
-      <div>
-        <small>📦 YÜKLEME (SARIM)</small>
-        <b><?= h($s['ydepo_ad']) ?></b>
-        <div class="soluk"><?= h(implode(' / ', array_filter([$s['ydepo_ilce'], $s['ydepo_il']]))) ?></div>
-        <?php if ($yHarita): ?><a target="_blank" rel="noopener" href="<?= h($yHarita) ?>">🗺️ Harita</a> · <a target="_blank" rel="noopener" href="<?= h(yol_tarifi_link($s['ydepo_lat'], $s['ydepo_lng'])) ?>">Yol tarifi</a><?php else: ?><span class="kirmizi">⚠️ Koordinat yok</span> <a href="index.php?p=depo_form&id=<?= (int)$s['yukleme_depo_id'] ?>">ekle</a><?php endif; ?>
-      </div>
-      <div class="ok">→</div>
-      <div>
-        <small>🏁 BOŞALTIM</small>
-        <b><?= h($s['bdepo_ad']) ?></b>
-        <div class="soluk"><?= h(implode(' / ', array_filter([$s['bdepo_ilce'], $s['bdepo_il']]))) ?></div>
-        <?php if ($bHarita): ?><a target="_blank" rel="noopener" href="<?= h($bHarita) ?>">🗺️ Harita</a> · <a target="_blank" rel="noopener" href="<?= h(yol_tarifi_link($s['bdepo_lat'], $s['bdepo_lng'])) ?>">Yol tarifi</a><?php else: ?><span class="kirmizi">⚠️ Koordinat yok</span> <a href="index.php?p=depo_form&id=<?= (int)$s['bosaltim_depo_id'] ?>">ekle</a><?php endif; ?>
-      </div>
-    </div>
+  <div class="kart taraf yukleme-tarafi">
+    <h2>📦 Yükleme Tarafı</h2>
+    <b><?= h($s['ydepo_ad']) ?></b>
+    <div class="soluk"><?= h(implode(' / ', array_filter([$s['ydepo_ilce'], $s['ydepo_il']]))) ?></div>
+    <div><?= $konumHtml($s['ydepo_lat'], $s['ydepo_lng'], $yHarita, $s['yukleme_depo_id']) ?></div>
     <dl class="bilgiler">
       <dt>Yükleme tarihi</dt><dd><?= h(tarih_tr($s['tarih'])) ?></dd>
-      <dt>Teslim tarihi</dt><dd><?= h(tarih_tr($s['teslim_tarihi'])) ?: '—' ?></dd>
+      <dt>Kantar net</dt><dd><b><?= (float)$s['miktar_kg'] > 0 ? kg_fmt($s['miktar_kg']) . ' kg' : '<span class="kirmizi">girilmedi</span>' ?></b></dd>
+      <dt>İrsaliye no</dt><dd><?= h($s['irsaliye_no']) ?: '—' ?></dd>
+      <dt>Kantar fiş no</dt><dd><?= h($s['kantar_fis_no']) ?: '—' ?></dd>
+    </dl>
+    <?= $belgeListesi($taraf['yukleme'], 'Yükleme irsaliyesi / kantar fişi yüklenmedi.') ?>
+  </div>
+
+  <div class="kart taraf bosaltim-tarafi">
+    <h2>🏁 Boşaltım Tarafı</h2>
+    <b><?= h($s['bdepo_ad']) ?></b>
+    <div class="soluk"><?= h(implode(' / ', array_filter([$s['bdepo_ilce'], $s['bdepo_il']]))) ?></div>
+    <div><?= $konumHtml($s['bdepo_lat'], $s['bdepo_lng'], $bHarita, $s['bosaltim_depo_id']) ?></div>
+    <dl class="bilgiler">
+      <dt>Boşaltım tarihi</dt><dd><?= h(tarih_tr($s['teslim_tarihi'])) ?: '—' ?></dd>
+      <dt>Kantar net</dt><dd><b><?= $bosVar ? kg_fmt($s['bosaltim_kg']) . ' kg' : '<span class="soluk">henüz girilmedi</span>' ?></b></dd>
+      <dt>İrsaliye no</dt><dd><?= h($s['bosaltim_irsaliye_no']) ?: '—' ?></dd>
+      <dt>Kantar fiş no</dt><dd><?= h($s['bosaltim_kantar_fis_no']) ?: '—' ?></dd>
+    </dl>
+    <?= $belgeListesi($taraf['bosaltim'], 'Boşaltım irsaliyesi / kantar fişi yüklenmedi.') ?>
+    <?php if (!$silinmis && $s['durum'] !== 'iptal'): ?>
+    <details class="bosaltim-kutu" <?= !$bosVar && $s['durum'] !== 'planlandi' ? 'open' : '' ?>>
+      <summary><b>⚖️ <?= $bosVar ? 'Boşaltım bilgilerini düzenle' : 'Boşaltımı Kaydet' ?></b></summary>
+      <form method="post" enctype="multipart/form-data" class="form" data-max-dosya="<?= (int)$sinir['dosya'] ?>" data-max-toplam="<?= (int)$sinir['toplam'] ?>" data-max-adet="<?= (int)$sinir['adet'] ?>">
+        <?= csrf_alan() ?><input type="hidden" name="islem" value="bosaltim_kaydet">
+        <div class="iki">
+          <label>Boşaltım kantarı net (kg)<input name="bosaltim_kg" inputmode="decimal" value="<?= h($bosVar ? sayi_input($s['bosaltim_kg']) : '') ?>" placeholder="ör. 26950"
+            data-fire-yukleme="<?= h((string)(float)$s['miktar_kg']) ?>" data-tolerans="<?= h((string)fire_toleransi()) ?>"></label>
+          <label>Boşaltım (teslim) tarihi<input type="date" name="teslim_tarihi" value="<?= h($s['teslim_tarihi'] ?: date('Y-m-d')) ?>"></label>
+          <label>Boşaltım irsaliye no<input name="bosaltim_irsaliye_no" value="<?= h($s['bosaltim_irsaliye_no']) ?>"></label>
+          <label>Boşaltım kantar fiş no<input name="bosaltim_kantar_fis_no" value="<?= h($s['bosaltim_kantar_fis_no']) ?>"></label>
+        </div>
+        <div class="fire-onizleme soluk"></div>
+        <div class="iki">
+          <label class="dosya">📄 Boşaltım irsaliyesi<input type="file" name="belge_bosaltim_irsaliye[]" multiple accept="application/pdf,image/*"></label>
+          <label class="dosya">⚖️ Boşaltım kantar fişi<input type="file" name="belge_bosaltim_kantar[]" multiple accept="application/pdf,image/*"></label>
+        </div>
+        <?php if ($s['durum'] !== 'teslim'): ?>
+          <label class="onay"><input type="checkbox" name="teslim_yap" value="1" checked> Seferi "Teslim Edildi" olarak işaretle</label>
+        <?php endif; ?>
+        <button class="btn ana">💾 Boşaltımı Kaydet</button>
+      </form>
+    </details>
+    <?php endif; ?>
+  </div>
+</div>
+
+<?php if ($bosVar): $fd = fire_durumu($h); ?>
+<div class="kart fire-kart fire-<?= h($fd) ?>">
+  <h2>⚖️ Kantar Karşılaştırması</h2>
+  <div class="fire-satir">
+    <div><small>Yükleme</small><b><?= kg_fmt($s['miktar_kg']) ?> kg</b></div>
+    <div><small>Boşaltım</small><b><?= kg_fmt($s['bosaltim_kg']) ?> kg</b></div>
+    <div><small><?= $h['fire_kg'] < 0 ? 'Fazla' : 'Fire' ?></small><b><?= h(fire_metni($h)) ?></b></div>
+  </div>
+  <p class="<?= $fd === 'normal' ? 'soluk' : 'kirmizi' ?>">
+    <?= $fd === 'normal' ? '✅ Tolerans içinde' : ($fd === 'asim' ? '⚠️ Fire toleransı aşıldı' : '⚠️ Boşaltım yüklemeden fazla; kantarları kontrol edin') ?>
+    (tolerans %<?= h(sayi_fmt(fire_toleransi(), 2)) ?>)
+  </p>
+</div>
+<?php endif; ?>
+
+<div class="iki-sutun">
+  <div class="kart">
+    <h2>Şoför ve Araç</h2>
+    <dl class="bilgiler">
       <dt>Şoför</dt><dd><?= h(sofor_adsoyad($s)) ?: '—' ?> <?= $s['sofor_tc'] ? '<span class="soluk">TC ' . h($s['sofor_tc']) . '</span>' : '' ?> <?= $s['sofor_id'] ? '<a class="kucuk-yazi" href="index.php?p=sofor_form&id=' . (int)$s['sofor_id'] . '">şoför kartı →</a>' : '' ?></dd>
       <dt>Telefon</dt><dd><?= $tel ? '<a href="tel:' . h($tel) . '">' . h($tel) . '</a>' . ($telKarttan ? ' <span class="soluk">(kart)</span>' : '') : '—' ?></dd>
       <dt>Çekici / Dorse</dt><dd><?= h($s['cekici_plaka']) ?> / <?= h($s['dorse_plaka']) ?></dd>
-      <dt>İrsaliye no</dt><dd><?= h($s['irsaliye_no']) ?: '—' ?></dd>
-      <dt>Kantar fiş no</dt><dd><?= h($s['kantar_fis_no']) ?: '—' ?></dd>
       <?php if ($s['notlar']): ?><dt>Notlar</dt><dd><?= nl2br(h($s['notlar'])) ?></dd><?php endif; ?>
       <dt>Kaydeden</dt><dd><?= h($s['olusturan']) ?> · <?= h(tarih_tr($s['olusturma'])) ?></dd>
     </dl>
@@ -195,12 +318,14 @@ sayfa_bas("Sefer #$id", 'seferler');
   <div class="kart">
     <h2>Yük ve Ücret</h2>
     <table class="hesap-tablo">
-      <tr><th colspan="2"><?= h($s['urun_ad'] ?: 'Ürün') ?> · <?= kg_fmt($s['miktar_kg']) ?> kg (<?= kg_fmt($h['ton']) ?> ton)</th></tr>
+      <tr><th colspan="2"><?= h($s['urun_ad'] ?: 'Ürün') ?></th></tr>
+      <tr><td>Hesap esası</td><td><?= h(ESASLAR[$s['mal_esas']] ?? $s['mal_esas']) ?> · <?= kg_fmt($h['mal_kg']) ?> kg<?= $h['mal_gecici'] ? ' <span class="kirmizi kucuk-yazi">(geçici: boşaltım girilmedi)</span>' : '' ?></td></tr>
       <tr><td>Ton fiyatı</td><td><?= tl($s['urun_ton_fiyat']) ?> + %<?= h(sayi_fmt($s['urun_kdv'], 2)) ?> KDV</td></tr>
       <tr><td>Mal bedeli (KDV hariç)</td><td><?= tl($h['mal']) ?></td></tr>
       <tr><td>KDV</td><td><?= tl($h['mal_kdv']) ?></td></tr>
       <tr class="toplam"><td>Mal bedeli (KDV dahil)</td><td><?= tl($h['mal_toplam']) ?></td></tr>
       <tr><th colspan="2">🚚 Nakliye (taşıyıcıya)</th></tr>
+      <tr><td>Hesap esası</td><td><?= h(ESASLAR[$s['nakliye_esas']] ?? $s['nakliye_esas']) ?> · <?= kg_fmt($h['nak_kg']) ?> kg<?= $h['nak_gecici'] ? ' <span class="kirmizi kucuk-yazi">(geçici: boşaltım girilmedi)</span>' : '' ?></td></tr>
       <tr><td>Ton başı nakliye</td><td><?= tl($s['nakliye_ton_fiyat']) ?> + %<?= h(sayi_fmt($s['nakliye_kdv'], 2)) ?> KDV</td></tr>
       <tr><td>Nakliye (KDV hariç)</td><td><?= tl($h['nak']) ?></td></tr>
       <tr><td>KDV</td><td><?= tl($h['nak_kdv']) ?></td></tr>
@@ -215,23 +340,9 @@ sayfa_bas("Sefer #$id", 'seferler');
 </div>
 
 <div class="kart">
-  <h2>📄 Belgeler (İrsaliye / Kantar Fişi)</h2>
-  <?php if (!$belgeler): ?><p class="soluk">Henüz belge yüklenmedi.</p><?php endif; ?>
-  <div class="belgeler">
-  <?php foreach ($belgeler as $b): $link = belge_link($b['token']); ?>
-    <div class="belge">
-      <a target="_blank" href="belge.php?t=<?= h($b['token']) ?>" class="belge-ad"><?= strpos((string)$b['mime'], 'pdf') !== false ? '📕' : '🖼️' ?> <b><?= h(BELGE_TURLERI[$b['tur']] ?? 'Belge') ?></b> <span class="soluk"><?= h($b['orijinal_ad']) ?> · <?= (int)round($b['boyut'] / 1024) ?> KB · <?= h(tarih_tr($b['olusturma'])) ?></span></a>
-      <?php if (!$silinmis): ?>
-      <div class="butonlar">
-        <a class="btn kucuk wa" target="_blank" rel="noopener" href="<?= h(wa_link($tel, (BELGE_TURLERI[$b['tur']] ?? 'Belge') . ' - Sefer #' . $id . ' (' . $s['cekici_plaka'] . ")\n" . $link)) ?>">WhatsApp</a>
-        <button type="button" class="btn kucuk" data-kopyala="<?= h($link) ?>">Linki kopyala</button>
-        <form method="post" class="satir-ici" onsubmit="return confirm('Belge kaldırılsın mı? Şoförün elindeki link de çalışmaz.')"><?= csrf_alan() ?><input type="hidden" name="islem" value="belge_sil"><input type="hidden" name="belge_id" value="<?= (int)$b['id'] ?>"><button class="btn kucuk tehlike">Kaldır</button></form>
-      </div>
-      <?php endif; ?>
-    </div>
-  <?php endforeach; ?>
-  </div>
-  <?php if (!$silinmis): $sinir = yukleme_sinirlari(); ?>
+  <h2>📎 Diğer Belgeler ve Belge Yükleme</h2>
+  <?= $belgeListesi($taraf['diger'], 'Diğer belge yok.') ?>
+  <?php if (!$silinmis): ?>
   <form method="post" enctype="multipart/form-data" class="yukle-form" data-max-dosya="<?= (int)$sinir['dosya'] ?>" data-max-toplam="<?= (int)$sinir['toplam'] ?>" data-max-adet="<?= (int)$sinir['adet'] ?>">
     <?= csrf_alan() ?><input type="hidden" name="islem" value="belge_yukle">
     <select name="tur"><?php foreach (BELGE_TURLERI as $k => $v): ?><option value="<?= $k ?>"><?= h($v) ?></option><?php endforeach; ?></select>
