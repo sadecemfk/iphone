@@ -1,0 +1,38 @@
+# Sefer Takip
+Options -Indexes
+DirectoryIndex index.php
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # HTTPS'e yönlendirme: SSL kuruluysa aşağıdaki iki satırın başındaki # işaretini kaldırın
+  # RewriteCond %{HTTPS} !=on
+  # RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+  # lib, pages ve data klasörlerine ve ayar dosyalarına doğrudan erişimi engelle
+  RewriteRule ^(lib|pages|data)(/|$) - [F,L]
+  RewriteRule ^config(\.local)?(\.ornek)?\.php$ - [F,L]
+</IfModule>
+
+# Veritabanı, kayıt ve gizli dosyalar hiçbir klasörde sunulmasın
+<FilesMatch "(\.(sqlite|sqlite-journal|log|log\.1)|^\.gizli|^erisim-testi\.txt)$">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</FilesMatch>
+
+# Dosya yükleme sınırları (PHP modül olarak çalışıyorsa; FPM/LSAPI için .user.ini kullanılır)
+<IfModule mod_php.c>
+  php_value upload_max_filesize 25M
+  php_value post_max_size 60M
+  php_value max_file_uploads 20
+</IfModule>
+<IfModule mod_php7.c>
+  php_value upload_max_filesize 25M
+  php_value post_max_size 60M
+  php_value max_file_uploads 20
+</IfModule>

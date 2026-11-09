@@ -1,0 +1,10 @@
+{
+  "name": "Sefer Takip",
+  "short_name": "Sefer Takip",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f2f4f7",
+  "theme_color": "#1f4e79",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
