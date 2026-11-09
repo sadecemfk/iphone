@@ -233,5 +233,67 @@ details.gereksinim { margin-top: 16px; }
   .tablo.gereksinimler td[data-e]::before { content: none; }
   .tablo.gereksinimler td + td { color: var(--soluk); font-size: .88rem; }
 }
+
+/* --- İki taraflı sefer --- */
+.taraf { border-top: 4px solid var(--cizgi); }
+.yukleme-tarafi { border-top-color: #e0a400; }
+.bosaltim-tarafi { border-top-color: #1c8a4a; }
+.taraf .bilgiler { margin-top: 10px; }
+.bosaltim-kutu { margin-top: 12px; border: 1px dashed var(--cizgi); border-radius: 10px; padding: 10px 12px; }
+.bosaltim-kutu[open] { background: var(--zemin); }
+.bosaltim-kutu summary { cursor: pointer; }
+.fire-onizleme { min-height: 1.2em; margin: 4px 0 10px; font-size: .9rem; }
+.fire-kart .fire-satir { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.fire-kart .fire-satir small { display: block; color: var(--soluk); font-size: .78rem; }
+.fire-kart .fire-satir b { font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+.fire-kart.fire-asim, .fire-kart.fire-fazla { border-color: var(--kirmizi); }
+details.esas { margin: 6px 0 4px; }
+details.esas summary { cursor: pointer; padding: 6px 0; }
+@media (max-width: 520px) { .fire-kart .fire-satir { grid-template-columns: 1fr 1fr; } }
+
+/* --- Deneme sürümü (GitHub Pages) --- */
 .deneme-bandi { background: #fff4d6; color: #6b4a00; border-bottom: 1px solid #f1d98d; padding: 8px 16px; font-size: .85rem; text-align: center; }
 @media (prefers-color-scheme: dark) { .deneme-bandi { background: #3a2f12; color: #f3dc9c; border-color: #5e4c1c; } }
+
+/* Sefer Fişi */
+body.fis-modu .ust, body.fis-modu .deneme-bandi { display: none; }
+body.fis-modu { background: #e9ecf1; }
+.fis-araclar { max-width: 800px; margin: 0 auto 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+.fis-sayfa { background: #fff; color: #111; max-width: 800px; margin: 0 auto; padding: 28px 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,.08); font-size: 13px; line-height: 1.45; }
+.fis-sayfa .kucuk { font-size: 11px; color: #555; }
+.fis-ust { display: flex; justify-content: space-between; gap: 16px; border-bottom: 2px solid #1f4e79; padding-bottom: 10px; margin-bottom: 14px; }
+.fis-ust h1 { font-size: 20px; margin: 0; color: #1f4e79; }
+.fis-no { text-align: right; }
+.fis-no b { font-size: 18px; }
+.fis-sayfa table { width: 100%; border-collapse: collapse; }
+.fis-bilgi td { padding: 4px 6px; vertical-align: top; }
+.fis-bilgi td:first-child { color: #555; width: 110px; }
+.fis-taraflar { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0; }
+.fis-taraf { border: 1px solid #c9d2de; border-radius: 6px; padding: 10px 12px; }
+.fis-taraf h2 { font-size: 14px; margin: 0 0 6px; color: #1f4e79; letter-spacing: .03em; }
+.fis-taraf td { padding: 3px 0; border-bottom: 1px dashed #e1e6ee; }
+.fis-taraf td:last-child { text-align: right; font-weight: 600; }
+.fis-fire { border: 1px solid #c9d2de; border-radius: 6px; padding: 8px 12px; display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.fis-fire.asim, .fis-fire.fazla { border-color: #c0392b; background: #fdf1f0; }
+.fis-ucret-kap { margin-top: 14px; overflow-x: auto; }
+.fis-ucret td, .fis-ucret th { padding: 5px 6px; border-bottom: 1px solid #e1e6ee; text-align: right; }
+.fis-ucret td:not(:first-child) { white-space: nowrap; }
+.fis-ucret th:first-child, .fis-ucret td:first-child { text-align: left; }
+.fis-ucret th { background: #f2f5f9; font-size: 12px; }
+.fis-imzalar { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 28px; }
+.fis-imza { border-top: 1px solid #333; padding-top: 4px; text-align: center; font-size: 12px; min-height: 60px; }
+.fis-not { margin-top: 12px; padding: 8px 10px; background: #f7f9fb; border-radius: 6px; }
+.fis-deneme { margin-top: 16px; text-align: center; }
+@media (max-width: 560px) {
+  .fis-sayfa { padding: 16px; }
+  .fis-taraflar, .fis-imzalar { grid-template-columns: 1fr; }
+}
+@media print {
+  body.fis-modu { background: #fff; padding: 0; }
+  body.fis-modu .icerik { padding: 0; max-width: none; }
+  .fis-araclar, .toast { display: none !important; }
+  .fis-sayfa { box-shadow: none; border-radius: 0; max-width: none; padding: 0; }
+  .fis-taraflar { grid-template-columns: 1fr 1fr !important; }
+  .fis-imzalar { grid-template-columns: repeat(3, 1fr) !important; }
+  @page { size: A4; margin: 14mm; }
+}

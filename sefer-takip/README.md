@@ -67,6 +67,36 @@ iPhone'dan kullanılacak şekilde tasarlandı. **PHP + SQLite** ile çalışır,
 
 **Gereksinim:** PHP 7.4 veya üzeri (**8.1+ önerilir**). Eklentiler: `pdo_sqlite`, `mbstring`, `zip`, `fileinfo`, `curl`. Bir de SSL sertifikası (çoğu hostingde ücretsiz Let's Encrypt).
 
+### Hosting seçimi (ne almalı?)
+
+Normal bir **Linux paylaşımlı hosting** yeterlidir (cPanel, Plesk veya DirectAdmin panelli). Hosting firmasına şu soruları sorun:
+
+| Sorulacak | Gereken |
+|---|---|
+| PHP sürümü | 8.1 veya üzeri (8.2 / 8.3 ideal). En az 7.4 |
+| PHP eklentileri | `pdo_sqlite`, `zip`, `mbstring`, `fileinfo`, `curl` açık mı? |
+| SSL | Ücretsiz Let's Encrypt var mı? |
+| Klasör | `public_html` dışında klasör açabiliyor muyum? |
+| Yükleme sınırı | `upload_max_filesize` en az 20 MB, `post_max_size` en az 60 MB yapılabiliyor mu? |
+| Disk | Belgeler biriktikçe büyür; **en az 20 GB** önerilir |
+| Yedek | Günlük otomatik yedek var mı? |
+| Alt alan adı | `takip.firmaniz.com` gibi bir subdomain açabiliyor muyum? |
+
+**Disk tahmini:** Telefonla çekilen bir fotoğraf 2-4 MB, taranmış bir PDF sayfası 0,2-0,5 MB'tır. Günde 10 sefer × 4 belge ile yılda kabaca **5-15 GB** birikir.
+👉 Belgeleri fotoğraf yerine **PDF olarak tarayın** (iPhone Notlar / Dosyalar → "Belgeleri Tara"); hem net okunur hem 5-10 kat az yer kaplar.
+
+### WordPress hosting'de çalışır mı?
+
+- **Evet, çalışır.** Türkiye'deki "WordPress hosting" paketleri genelde WordPress kurulu normal cPanel/Plesk hostingdir. Sefer Takip, WordPress'ten bağımsız ayrı bir klasörde çalışır. En iyisi ayrı bir alt alan adına kurmaktır (ör. `takip.firmaniz.com`).
+- **Temanın içinde çalışmaz, çalışması da gerekmez.** Kendi arayüzü vardır. Firma sitenize sadece "Sefer Takip" linki koymanız yeterli.
+- **Dikkat 1:** "Yönetilen WordPress" platformları kendi PHP uygulamanızı kurmanıza genelde izin vermez; bunlar uygun değildir. Örnek: WordPress.com, WP Engine, Kinsta. Hosting firmasına "WordPress dışında kendi PHP uygulamamı subdomain'e kurabilir miyim?" diye sorun.
+- **Dikkat 2 (güvenlik):** Aynı hosting hesabındaki WordPress (eklentiler, temalar) ele geçirilirse saldırgan aynı hesaptaki dosyalara da erişebilir. WordPress ve eklentileri güncel tutun. Mümkünse Sefer Takip için **ayrı bir hosting paketi / hesabı** kullanın.
+- **WordPress eklentisi olarak yeniden yazmak önerilmez:**
+  - Sistem bağımsız olarak hazır ve test edildi; eklentiye çevirmek uzun iş ve yeni hata riski demek.
+  - WordPress'in yükleme klasörü varsayılan olarak herkese açıktır; irsaliye ve TC bilgileri için ek koruma gerekir.
+  - Eklenti ve tema güncellemeleri sistemi bozabilir.
+  - wp-admin telefonda bu arayüz kadar kullanışlı değildir.
+
 ### Canlıya alma kontrol listesi
 
 1. **Veri klasörünü oluşturun:** web klasörünün (`public_html`) **dışında** olmalı. Örnek: `/home/KULLANICIADI/sefer-data`, izin 775.
