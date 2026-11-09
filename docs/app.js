@@ -52,7 +52,8 @@
   function tl(n) { return para(n) + ' ₺'; }
   function kgFmt(n) { return (+n || 0).toLocaleString('tr-TR', { maximumFractionDigits: 3 }); }
   function sayiInput(n) { if (n === '' || n == null) return ''; return String(+n).replace('.', ','); }
-  function plaka(s) { return String(s || '').replace(/\s+/g, '').toLocaleUpperCase('tr-TR'); }
+  // Plakalarda Türkçe İ yoktur: i / ı → I (toLocaleUpperCase('tr-TR') "i"yi "İ" yapıyordu)
+  function plaka(s) { return String(s || '').replace(/\s+/g, '').replace(/[ıi]/g, 'I').toUpperCase(); }
   function telWa(t) {
     var d = String(t || '').replace(/\D+/g, '');
     if (d.indexOf('00') === 0) d = d.slice(2);

@@ -27,7 +27,7 @@ $etiket = [
         return '#' . $r['id'] . ' · ' . tarih_tr($r['tarih']) . ' · ' . $r['ydepo_ad'] . ' → ' . $r['bdepo_ad'] . ' · ' . $r['urun_ad'] . ' ' . kg_fmt($r['miktar_kg']) . ' kg';
     },
     'depolar' => function ($r) {
-        return depo_etiket($r) . ' (' . ($r['tip'] === 'yukleme' ? 'Yükleme' : 'Boşaltım') . ')';
+        return depo_etiket(array_merge($r, ['silindi' => 0])) . ' (' . ($r['tip'] === 'yukleme' ? 'Yükleme' : 'Boşaltım') . ')';
     },
     'soforler' => function ($r) {
         return $r['ad'] . ' ' . $r['soyad'] . ' · ' . $r['cekici_plaka'];

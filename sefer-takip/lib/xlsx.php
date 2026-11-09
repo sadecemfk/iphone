@@ -1,14 +1,22 @@
 <?php
 // Bağımlılıksız, basit .xlsx (Excel) dosya oluşturucu
+// Sayılar sayı, DateTime değerleri gerçek Excel tarihi olarak yazılır.
 
 class Xlsx
 {
     private $sayfalar = [];
 
+    // Hücre stilleri (styles.xml içindeki sıra)
+    const S_BASLIK = 1;
+    const S_PARA = 2;
+    const S_TARIH = 3;
+    const S_TARIH_SAAT = 4;
+    const S_SARMA = 5;
+
     /**
-     * @param string $ad      Sayfa adı
+     * @param string $ad        Sayfa adı
      * @param array  $basliklar Başlık satırı
-     * @param array  $satirlar  Veri satırları (dizi dizisi). Sayılar sayı olarak yazılır.
+     * @param array  $satirlar  Veri satırları. int/float → sayı, DateTimeInterface → tarih, diğerleri → metin.
      * @param array  $paraSutun Para biçimi uygulanacak sütun indexleri (0'dan)
      */
     public function sayfa($ad, array $basliklar, array $satirlar, array $paraSutun = [])
@@ -36,14 +44,32 @@ class Xlsx
         return htmlspecialchars($s, ENT_XML1 | ENT_QUOTES, 'UTF-8');
     }
 
+    /** DateTime → Excel seri sayısı (1899-12-30 tabanlı) */
+    private static function seri(DateTimeInterface $d)
+    {
+        $utc = new DateTime($d->format('Y-m-d H:i:s'), new DateTimeZone('UTC'));
+        return $utc->getTimestamp() / 86400 + 25569;
+    }
+
+    private static function genislik($v)
+    {
+        if ($v instanceof DateTimeInterface) {
+            return $v->format('H:i:s') === '00:00:00' ? 12 : 17;
+        }
+        $en = 0;
+        foreach (explode("\n", (string)$v) as $satir) {
+            $en = max($en, mb_strlen($satir));
+        }
+        return $en + 2;
+    }
+
     private function sayfaXml($sf)
     {
         $gen = [];
         $tum = array_merge([$sf['basliklar']], $sf['satirlar']);
         foreach ($tum as $r) {
             foreach (array_values($r) as $i => $v) {
-                $l = min(60, max(8, mb_strlen((string)$v) + 2));
-                $gen[$i] = max($gen[$i] ?? 8, $l);
+                $gen[$i] = max($gen[$i] ?? 8, min(60, max(8, self::genislik($v))));
             }
         }
         $o = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
@@ -60,14 +86,18 @@ class Xlsx
             foreach (array_values($r) as $ci => $v) {
                 $ref = self::sutun($ci) . $rn;
                 if ($ri === 0) {
-                    $o .= '<c r="' . $ref . '" t="inlineStr" s="1"><is><t>' . self::x($v) . '</t></is></c>';
+                    $o .= '<c r="' . $ref . '" t="inlineStr" s="' . self::S_BASLIK . '"><is><t>' . self::x($v) . '</t></is></c>';
                 } elseif ($v === null || $v === '') {
                     continue;
+                } elseif ($v instanceof DateTimeInterface) {
+                    $st = $v->format('H:i:s') === '00:00:00' ? self::S_TARIH : self::S_TARIH_SAAT;
+                    $o .= '<c r="' . $ref . '" s="' . $st . '"><v>' . round(self::seri($v), 10) . '</v></c>';
                 } elseif (is_int($v) || is_float($v)) {
-                    $st = in_array($ci, $sf['paraSutun'], true) ? ' s="2"' : '';
+                    $st = in_array($ci, $sf['paraSutun'], true) ? ' s="' . self::S_PARA . '"' : '';
                     $o .= '<c r="' . $ref . '"' . $st . '><v>' . $v . '</v></c>';
                 } else {
-                    $o .= '<c r="' . $ref . '" t="inlineStr"><is><t xml:space="preserve">' . self::x($v) . '</t></is></c>';
+                    $st = strpos((string)$v, "\n") !== false ? ' s="' . self::S_SARMA . '"' : '';
+                    $o .= '<c r="' . $ref . '" t="inlineStr"' . $st . '><is><t xml:space="preserve">' . self::x($v) . '</t></is></c>';
                 }
             }
             $o .= '</row>';
@@ -89,7 +119,9 @@ class Xlsx
             $this->sayfa('Sayfa1', [], []);
         }
         $z = new ZipArchive();
-        $z->open($yol, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+        if ($z->open($yol, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+            throw new RuntimeException('Excel dosyası oluşturulamadı.');
+        }
         $ct = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             . '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
             . '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
@@ -110,28 +142,34 @@ class Xlsx
         $sn = count($this->sayfalar) + 1;
         $rels .= '<Relationship Id="rId' . $sn . '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>';
         $wb .= '</sheets>';
-        // Başlık satırındaki filtre için tanımlı ad
-        $wb .= '<definedNames>';
+        $tanimli = '';
         foreach ($this->sayfalar as $i => $sf) {
             $sat = count($sf['satirlar']) + 1;
             if ($sat > 1 && $sf['basliklar']) {
-                $wb .= '<definedName name="_xlnm._FilterDatabase" localSheetId="' . $i . '" hidden="1">\'' . self::x(str_replace("'", "''", $sf['ad'])) . '\'!$A$1:$' . self::sutun(count($sf['basliklar']) - 1) . '$' . $sat . '</definedName>';
+                $tanimli .= '<definedName name="_xlnm._FilterDatabase" localSheetId="' . $i . '" hidden="1">\'' . self::x(str_replace("'", "''", $sf['ad'])) . '\'!$A$1:$' . self::sutun(count($sf['basliklar']) - 1) . '$' . $sat . '</definedName>';
             }
         }
-        $wb .= '</definedNames></workbook>';
-        $wb = str_replace('<definedNames></definedNames>', '', $wb);
+        if ($tanimli !== '') {
+            $wb .= '<definedNames>' . $tanimli . '</definedNames>';
+        }
+        $wb .= '</workbook>';
         $ct .= '</Types>';
         $styles = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             . '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-            . '<numFmts count="1"><numFmt numFmtId="164" formatCode="#,##0.00"/></numFmts>'
+            . '<numFmts count="3"><numFmt numFmtId="164" formatCode="#,##0.00"/><numFmt numFmtId="165" formatCode="dd\.mm\.yyyy"/><numFmt numFmtId="166" formatCode="dd\.mm\.yyyy\ hh:mm"/></numFmts>'
             . '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font></fonts>'
             . '<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>'
             . '<fill><patternFill patternType="solid"><fgColor rgb="FF1F4E79"/><bgColor indexed="64"/></patternFill></fill></fills>'
             . '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
             . '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
-            . '<cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
+            . '<cellXfs count="6">'
+            . '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
             . '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/>'
-            . '<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs>'
+            . '<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>'
+            . '<xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>'
+            . '<xf numFmtId="166" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>'
+            . '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf>'
+            . '</cellXfs>'
             . '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>'
             . '</styleSheet>';
         $z->addFromString('[Content_Types].xml', $ct);
@@ -144,13 +182,46 @@ class Xlsx
 
     public function indir($dosyaAdi)
     {
-        $tmp = tempnam(sys_get_temp_dir(), 'xlsx');
+        $tmp = tempnam(gecici_dizin(), 'xlsx');
         $this->kaydet($tmp);
         header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         header('Content-Disposition: attachment; filename="' . $dosyaAdi . '"');
         header('Content-Length: ' . filesize($tmp));
+        header('Cache-Control: no-store');
         readfile($tmp);
         @unlink($tmp);
         exit;
+    }
+}
+
+/** Geçici dosyalar için klasör (paylaşımlı hostinglerde /tmp kısıtlı olabilir) */
+function gecici_dizin()
+{
+    $d = data_dir() . '/gecici';
+    if (!is_dir($d)) {
+        @mkdir($d, 0770, true);
+    }
+    if (is_dir($d) && is_writable($d)) {
+        // 1 günden eski artıkları temizle
+        foreach (glob($d . '/*') ?: [] as $f) {
+            if (is_file($f) && filemtime($f) < time() - 86400) {
+                @unlink($f);
+            }
+        }
+        return $d;
+    }
+    return sys_get_temp_dir();
+}
+
+/** 'Y-m-d' veya 'Y-m-d H:i:s' metnini Excel tarihine çevirir; boşsa '' */
+function excel_tarih($t)
+{
+    if (!$t) {
+        return '';
+    }
+    try {
+        return new DateTimeImmutable($t);
+    } catch (Exception $e) {
+        return (string)$t;
     }
 }

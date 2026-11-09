@@ -53,10 +53,12 @@ function belge_kaydet($seferId, array $f, $tur)
     }
     $uz = strtolower(pathinfo($f['name'], PATHINFO_EXTENSION));
     if (!isset(BELGE_UZANTILAR[$mime])) {
+        $bas = (string)@file_get_contents($f['tmp_name'], false, null, 0, 1024);
         // finfo HEIC'i tanımayabilir: uzantıya bak
         if (in_array($uz, ['heic', 'heif'], true)) {
             $mime = 'image/heic';
-        } elseif ($mime === '' && $uz === 'pdf') {
+        } elseif ($uz === 'pdf' && ($mime === '' || strpos($bas, '%PDF') !== false)) {
+            // Bazı tarayıcı/kantar PDF'leri "octet-stream" görünür; içeriği PDF ise kabul et
             $mime = 'application/pdf';
         } else {
             return $f['name'] . ': sadece PDF, JPG, PNG, WEBP, HEIC yüklenebilir.';
@@ -85,6 +87,19 @@ function belge_kaydet($seferId, array $f, $tur)
         'olusturan' => aktif_kullanici_adi(),
     ]);
     return null;
+}
+
+/** İstekte en az bir dosya seçilmiş mi? */
+function dosya_secildi_mi()
+{
+    foreach (array_keys($_FILES) as $alan) {
+        foreach (dosya_listesi($alan) as $f) {
+            if ($f['error'] !== UPLOAD_ERR_NO_FILE) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 /** Formdaki irsaliye / kantar / diğer alanlarını işler, hataları döner */

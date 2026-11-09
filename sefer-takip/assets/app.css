@@ -201,3 +201,34 @@ details summary { cursor: pointer; padding: 4px 0; }
   .wa-kart .btn { flex: 1 1 100%; }
 }
 .toast { position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%); background: #222; color: #fff; padding: 10px 18px; border-radius: 999px; z-index: 99; font-size: .9rem; }
+
+/* --- Sürüm 2 eklemeleri --- */
+.uyari.dikkat { background: #fff6dd; color: #6b4a00; border-color: #f0d68a; }
+@media (prefers-color-scheme: dark) { .uyari.dikkat { background: #3a2f12; color: #f3dc9c; border-color: #5e4c1c; } }
+.uyari ul { margin: .4em 0 0; padding-left: 1.2em; }
+.uyari a { font-weight: 600; }
+.taslak-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+input.hatali, select.hatali, textarea.hatali { outline: 2px solid var(--kirmizi); border-color: transparent; }
+details.filtre > summary { list-style: none; display: flex; align-items: center; gap: 8px; }
+details.filtre > summary::-webkit-details-marker { display: none; }
+details.filtre > summary::after { content: '▾'; margin-left: auto; color: var(--soluk); }
+details.filtre[open] > summary { margin-bottom: 12px; }
+details.filtre[open] > summary::after { content: '▴'; }
+.gereksinimler td:first-child { white-space: nowrap; font-weight: 600; }
+.gereksinimler tr.g-hata td { color: var(--kirmizi); }
+details.gereksinim { margin-top: 16px; }
+.kullanici-satir { border-top: 1px solid var(--cizgi); padding: 8px 0; }
+.kullanici-satir > summary { cursor: pointer; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.kullanici-islemler { padding: 8px 0 4px; }
+.silinmis-bant { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.tablo tr.fark td { background: rgba(255, 196, 0, .12); }
+.zip-ac { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.zip-ac input { width: auto; margin: 0; padding: 6px 8px; font-size: 14px; }
+.kucuk-yazi { font-size: .85em; }
+@media (max-width: 760px) {
+  .tablo.gecmis td[data-e]::before { margin-right: 8px; }
+  .tablo.gecmis td { padding: 2px 0; }
+  .tablo.gereksinimler td { display: block; text-align: left; padding: 2px 0; }
+  .tablo.gereksinimler td[data-e]::before { content: none; }
+  .tablo.gereksinimler td + td { color: var(--soluk); font-size: .88rem; }
+}

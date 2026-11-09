@@ -1,5 +1,12 @@
 <?php
 
+/** CSS/JS adresine dosya tarihini ekler: güncellemeden sonra tarayıcı eski dosyayı kullanmaz */
+function varlik($yol)
+{
+    $f = uygulama_dizini() . '/' . $yol;
+    return $yol . '?v=' . (is_file($f) ? filemtime($f) : '1');
+}
+
 function sayfa_bas($baslik, $aktif = '')
 {
     $app = cfg('app_name', 'Sefer Takip');
@@ -10,20 +17,27 @@ function sayfa_bas($baslik, $aktif = '')
         'depolar' => ['Depolar', '📍'],
         'soforler' => ['Şoförler', '👤'],
         'urunler' => ['Ürünler', '📦'],
-        'yedek' => ['Yedek / Excel', '💾'],
     ];
+    if (yonetici_mi()) {
+        $menu['yedek'] = ['Yedek / Excel', '💾'];
+    }
+    // Başarılı kayıttan sonra tarayıcıdaki form taslağını sil
+    $taslakTemizle = implode(',', $_SESSION['taslak_temizle'] ?? []);
+    unset($_SESSION['taslak_temizle']);
     ?><!doctype html>
 <html lang="tr">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="<?= h($app) ?>">
 <meta name="theme-color" content="#1f4e79">
+<meta name="robots" content="noindex, nofollow">
 <title><?= h($baslik) ?> · <?= h($app) ?></title>
-<link rel="stylesheet" href="assets/app.css?v=1">
+<link rel="stylesheet" href="<?= h(varlik('assets/app.css')) ?>">
 </head>
-<body>
+<body<?= $taslakTemizle !== '' ? ' data-taslak-temizle="' . h($taslakTemizle) . '"' : '' ?>>
 <?php if (aktif_kullanici()): ?>
 <header class="ust">
   <a class="logo" href="index.php">🚛 <?= h($app) ?></a>
@@ -50,7 +64,7 @@ function sayfa_son()
 {
     ?>
 </main>
-<script src="assets/app.js?v=1"></script>
+<script src="<?= h(varlik('assets/app.js')) ?>"></script>
 </body>
 </html>
 <?php
@@ -60,7 +74,7 @@ function secenekler(array $liste, $secili, $bos = '— Seçin —', $etiket = nu
 {
     $o = $bos !== null ? '<option value="">' . h($bos) . '</option>' : '';
     foreach ($liste as $r) {
-        $e = $etiket ? $etiket($r) : $r['ad'];
+        $e = $etiket ? $etiket($r) : $r['ad'] . (!empty($r['silindi']) ? ' [silinmiş]' : '');
         $o .= '<option value="' . h($r['id']) . '"' . ((string)$secili === (string)$r['id'] ? ' selected' : '') . '>' . h($e) . '</option>';
     }
     return $o;
@@ -77,7 +91,7 @@ function sayfalama($toplam, $sayfa, $limit)
     if ($ss <= 1) {
         return '';
     }
-    $g = $_GET;
+    $g = get_hepsi();
     $o = '<div class="sayfalama">';
     for ($i = 1; $i <= $ss; $i++) {
         if ($ss > 12 && abs($i - $sayfa) > 3 && $i !== 1 && $i !== $ss) {
@@ -90,4 +104,14 @@ function sayfalama($toplam, $sayfa, $limit)
         $o .= '<a class="' . ($i === $sayfa ? 'aktif' : '') . '" href="index.php?' . h(http_build_query($g)) . '">' . $i . '</a>';
     }
     return $o . '</div>';
+}
+
+function gereksinim_tablosu(array $liste)
+{
+    $isaret = ['ok' => '✅', 'uyari' => '⚠️', 'hata' => '❌'];
+    $o = '<table class="tablo gereksinimler"><tbody>';
+    foreach ($liste as $r) {
+        $o .= '<tr class="g-' . h($r[1]) . '"><td data-e="Kontrol">' . $isaret[$r[1]] . ' ' . h($r[0]) . '</td><td data-e="Durum">' . h($r[2]) . '</td></tr>';
+    }
+    return $o . '</tbody></table>';
 }

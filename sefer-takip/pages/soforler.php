@@ -3,8 +3,11 @@ $ara = get('ara');
 $w = 'so.silindi = 0';
 $prm = [];
 if ($ara !== '') {
-    $w .= ' AND (so.ad LIKE ? OR so.soyad LIKE ? OR so.tc LIKE ? OR so.telefon LIKE ? OR so.cekici_plaka LIKE ? OR so.dorse_plaka LIKE ?)';
-    $prm = array_fill(0, 6, '%' . $ara . '%');
+    $kolonlar = ['so.ad', 'so.soyad', "so.ad || ' ' || COALESCE(so.soyad, '')", 'so.tc', 'so.telefon', 'so.cekici_plaka', 'so.dorse_plaka'];
+    $w .= ' AND (' . implode(' OR ', array_map(function ($k) {
+        return tr_kucuk_sql($k) . ' LIKE ?';
+    }, $kolonlar)) . ')';
+    $prm = array_fill(0, count($kolonlar), '%' . tr_kucuk($ara) . '%');
 }
 $liste = all("SELECT so.*, (SELECT COUNT(*) FROM seferler s WHERE s.silindi = 0 AND s.sofor_id = so.id) AS sefer_sayisi,
     (SELECT MAX(tarih) FROM seferler s WHERE s.silindi = 0 AND s.sofor_id = so.id) AS son_sefer

@@ -1,2 +1,3 @@
-# Canlı veriler asla git'e gönderilmez
+# Canlı veriler ve sunucuya özel ayarlar asla git'e gönderilmez
 data/
+config.local.php
